@@ -46,65 +46,51 @@ def step1_download_excel(driver) -> str:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import Select
 
     # 다운로드 직전 시각 기록 (새 파일 감지용)
     before_ts = time.time()
 
-    # 홈페이지의 새 탭을 열고 이동
-    driver.execute_script("window.open(arguments[0]);", config.HOMEPAGE_URL)
-    driver.switch_to.window(driver.window_handles[-1])
+    # 이미 열린 홈페이지 탭으로 전환 (없으면 현재 탭에서 이동)
+    for handle in driver.window_handles:
+        driver.switch_to.window(handle)
+        if "ongkihanyak" in driver.current_url:
+            break
+    else:
+        driver.switch_to.window(driver.window_handles[0])
+        driver.get(config.HOMEPAGE_URL)
+        WebDriverWait(driver, config.PAGE_LOAD_TIMEOUT).until(
+            EC.url_contains("ongkihanyak")
+        )
 
+    # 페이지는 frameset 구조 - right 프레임에 주문관리 내용이 있음
+    driver.switch_to.frame("right")
     wait = WebDriverWait(driver, config.PAGE_LOAD_TIMEOUT)
-    wait.until(EC.url_contains("rankup_index"))
 
-    # 주문관리 메뉴 클릭
-    menu = wait.until(EC.element_to_be_clickable(
-        (By.XPATH, "//*[contains(text(),'주문관리')]")
+    # 조제중 선택 (SELECT name=fs_status)
+    sel_status = wait.until(EC.presence_of_element_located(
+        (By.CSS_SELECTOR, "select[name='fs_status']")
     ))
-    menu.click()
-    time.sleep(0.5)
+    Select(sel_status).select_by_visible_text(config.ORDER_STATUS)
 
-    # 택배 엑셀다운 클릭
-    sub = wait.until(EC.element_to_be_clickable(
-        (By.XPATH, "//*[contains(text(),'택배 엑셀다운') or contains(text(),'택배엑셀다운')]")
-    ))
-    sub.click()
-    time.sleep(1)
-
-    # 조제 중 옵션 선택 (라디오버튼 또는 셀렉트박스)
-    try:
-        opt_joje = wait.until(EC.presence_of_element_located(
-            (By.XPATH, "//*[contains(text(),'조제 중') or @value='조제 중']")
-        ))
-        driver.execute_script("arguments[0].click();", opt_joje)
-    except Exception:
-        pass  # 이미 기본값이거나 다른 형태일 경우 무시
-
-    # 익산점 옵션 선택
-    try:
-        opt_branch = wait.until(EC.presence_of_element_located(
-            (By.XPATH,
-             f"//*[contains(text(),'{config.BRANCH_NAME}') or @value='{config.BRANCH_NAME}']")
-        ))
-        driver.execute_script("arguments[0].click();", opt_branch)
-    except Exception:
-        pass
+    # 익산점 선택 (SELECT name=store)
+    sel_store = driver.find_element(By.CSS_SELECTOR, "select[name='store']")
+    Select(sel_store).select_by_visible_text(config.BRANCH_NAME)
 
     time.sleep(0.3)
 
-    # 엑셀다운 버튼 클릭
+    # 택배 [엑셀다운] 클릭 - onclick에 excel_down 이 있는 링크
     dl_btn = wait.until(EC.element_to_be_clickable(
-        (By.XPATH,
-         "//button[contains(text(),'엑셀다운')] | "
-         "//input[@type='button' and contains(@value,'엑셀다운')] | "
-         "//a[contains(text(),'엑셀다운')]")
+        (By.XPATH, "//a[contains(@onclick,'excel_down')]")
     ))
     dl_btn.click()
+
+    driver.switch_to.default_content()
 
     # 다운로드 완료 대기 (택배관리_*.xls)
     xls_path = utils.wait_for_new_file(
         config.DOWNLOAD_DIR,
-        "택배관리_*.xls",
+        "택배관리_*.xls*",
         before_ts
     )
     return xls_path
@@ -138,107 +124,72 @@ def step4_clean_column_g(xlsx_path: str):
 
 def step5_automate_okosc() -> object:
     """
-    OKOSC에서 처방전검색(출력) → 대기처방 → 날짜 설정 → 검색 → 택배목록 클릭.
+    OKOSC에서 날짜 범위 설정 → 검색 → 택배목록 클릭.
     반환: '통합 문서 N' win32com 워크북 객체
     """
-    from pywinauto import Desktop
-    from pywinauto.keyboard import send_keys
     import pyautogui
+    import psutil
+    from pywinauto.keyboard import send_keys
 
-    start_date, end_date = utils.get_search_dates()
+    start_date, end_date = utils.get_search_dates()  # YYYY-MM-DD
 
     # ── OKOSC 창 찾기 ──────────────────────────────────────────────────────────
     okosc_win = utils.find_okosc_app()
     okosc_win.set_focus()
-    time.sleep(0.3)
-
-    # ── 처방전검색(출력) 클릭 ──────────────────────────────────────────────────
-    # TODO: 아래 title_re 를 실제 OKOSC 버튼/메뉴 텍스트로 수정하세요.
-    try:
-        btn = okosc_win.child_window(title_re=".*처방전검색.*출력.*",
-                                     control_type="Button")
-        btn.click_input()
-    except Exception:
-        # 메뉴 방식 fallback
-        try:
-            okosc_win.child_window(title_re=".*처방전검색.*").click_input()
-        except Exception as e:
-            raise RuntimeError(
-                f"OKOSC '처방전검색(출력)' 버튼을 찾지 못했습니다.\n"
-                f"utils.print_okosc_controls()로 컨트롤 목록을 확인 후 "
-                f"auto1.py step5 를 수정하세요.\n상세: {e}"
-            )
     time.sleep(0.5)
 
-    # ── 검색 다이얼로그 or 새 창 처리 ─────────────────────────────────────────
-    search_dlg = None
-    try:
-        search_dlg = Desktop(backend="uia").window(title_re=".*처방.*")
-        search_dlg.wait("visible", timeout=5)
-    except Exception:
-        search_dlg = okosc_win  # 같은 창 안에 있는 경우
+    def _set_ultra_date(auto_id, date_str):
+        """
+        UltraDateTimeEditor에 날짜 입력.
+        컨트롤 클릭 → End → Backspace 8번(20xx-xx-xx → 20) →
+        년 2자리 + 월 2자리 + 일 2자리 입력.
+        """
+        y, m, d = date_str.split("-")
+        yy = y[2:]   # 년도 뒤 2자리 (예: "2026" → "26")
+        ctrl = okosc_win.child_window(auto_id=auto_id)
+        rect = ctrl.rectangle()
+        cx = (rect.left + rect.right) // 2
+        cy = (rect.top + rect.bottom) // 2
 
-    # ── 대기처방 탭/버튼 클릭 ──────────────────────────────────────────────────
-    try:
-        search_dlg.child_window(title_re=".*대기처방.*").click_input()
-    except Exception:
-        pass  # 이미 선택된 상태일 수 있음
+        pyautogui.click(cx, cy)
+        time.sleep(0.2)
+        send_keys('{END}')           # 커서를 일 파트 끝으로
+        time.sleep(0.1)
+        for _ in range(8):           # 일(2)+-(1)+월(2)+-(1)+년뒤2자리(2) = 8
+            send_keys('{BACKSPACE}')
+            time.sleep(0.05)
+        time.sleep(0.1)
+        # 년 2자리 → 월 2자리 → 일 2자리
+        for ch in yy + m + d:
+            send_keys(ch)
+            time.sleep(0.05)
+        send_keys('{TAB}')
+        time.sleep(0.3)
+
+    _set_ultra_date("ulDteSearchStart", start_date)
+    _set_ultra_date("ulDteSearchEnd", end_date)
+
+    # ── 진행상태 → 조제 선택 (auto_id=ulCboSearchCBJState) ───────────────────
+    state_ctrl = okosc_win.child_window(auto_id="ulCboSearchCBJState")
+    rect = state_ctrl.rectangle()
+    pyautogui.click((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+    time.sleep(0.2)
+    send_keys('^a')
+    send_keys('조제')
+    send_keys('{TAB}')
     time.sleep(0.3)
 
-    # ── 처방전송일자 날짜 범위 설정 ───────────────────────────────────────────
-    # TODO: 아래 DateTimePicker control 이름을 실제 이름으로 수정하세요.
-    _set_date_field(search_dlg, "시작일", start_date)
-    _set_date_field(search_dlg, "종료일", end_date)
+    # ── 검색 버튼 클릭 (auto_id=ulBtnSearchCBJ) ──────────────────────────────
+    okosc_win.child_window(auto_id="ulBtnSearchCBJ").click_input()
+    time.sleep(2)
 
-    # ── 조제 옵션 선택 ─────────────────────────────────────────────────────────
-    try:
-        search_dlg.child_window(title_re=".*조제.*",
-                                 control_type="RadioButton").click_input()
-    except Exception:
-        pass
-
-    # ── 검색 버튼 클릭 ────────────────────────────────────────────────────────
-    try:
-        search_dlg.child_window(title_re="검색|조회",
-                                 control_type="Button").click_input()
-    except Exception:
-        search_dlg.child_window(title_re="검색|조회").click_input()
-    time.sleep(1)
-
-    # ── 택배목록 버튼 클릭 ────────────────────────────────────────────────────
-    # 이 버튼을 누르면 Excel "통합 문서 N" 이 열림
+    # ── 택배목록 버튼 클릭 (auto_id=ulBtnTekBe) → Excel 파일 열림 ───────────
     existing_names = utils.list_excel_workbook_names()
-    try:
-        search_dlg.child_window(title_re=".*택배목록.*",
-                                 control_type="Button").click_input()
-    except Exception:
-        search_dlg.child_window(title_re=".*택배목록.*").click_input()
+    okosc_win.child_window(auto_id="ulBtnTekBe").click_input()
 
-    # ── 새 통합문서 대기 ───────────────────────────────────────────────────────
+    # ── 새 통합문서가 열릴 때까지 대기 후 COM 연결 ───────────────────────────
     okosc_wb = utils.get_okosc_workbook(wait_new=True, before_names=existing_names)
     return okosc_wb
-
-
-def _set_date_field(dlg, field_hint: str, date_str: str):
-    """날짜 필드를 찾아 date_str(YYYY-MM-DD)을 입력."""
-    import pyautogui
-    try:
-        field = dlg.child_window(title_re=f".*{field_hint}.*", control_type="Edit")
-        field.set_text(date_str)
-    except Exception:
-        try:
-            field = dlg.child_window(title_re=f".*{field_hint}.*",
-                                      control_type="DateTimePicker")
-            import win32com.client
-            # DateTimePicker는 직접 값 설정이 복잡하므로 pyautogui 사용
-            rect = field.rectangle()
-            x = (rect.left + rect.right) // 2
-            y = (rect.top + rect.bottom) // 2
-            pyautogui.click(x, y)
-            pyautogui.hotkey('ctrl', 'a')
-            pyautogui.write(date_str.replace("-", ""), interval=0.05)
-        except Exception:
-            pass  # 날짜 입력 실패는 조용히 무시 (사용자가 수동 조정 가능)
 
 
 def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_wb) -> tuple:
@@ -336,7 +287,7 @@ def step10_11_paste_iksan_data(xlsx_path: str):
     """
     iksan_path = utils.find_iksan_file()
     iksan_wb = openpyxl.load_workbook(iksan_path, data_only=True)
-    iksan_ws = iksan_wb.active
+    iksan_ws = iksan_wb.worksheets[0]  # 가장 왼쪽 시트
 
     # L열(column=12)에서 연한 녹색 셀 그룹 추출
     # 이름, 전화번호, 주소가 연속 3셀로 녹색 처리되어 있다고 가정
@@ -603,7 +554,7 @@ class Auto1App:
         except Exception as e:
             self._log_msg(f"오류 발생: {e}")
             self._put("status", "❌ 오류 발생")
-            self.root.after(0, lambda: messagebox.showerror(
+            self.root.after(0, lambda e=e: messagebox.showerror(
                 "오류", str(e), parent=self.root
             ))
         finally:

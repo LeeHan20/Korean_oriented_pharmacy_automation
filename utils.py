@@ -295,21 +295,34 @@ def set_root(root: tk.Tk):
 def find_okosc_app():
     """
     pywinauto를 사용해 OKOSC 애플리케이션 창을 찾습니다.
-    반환: pywinauto Application 인스턴스
+    반환: pywinauto WindowSpecification (win32 backend)
     """
-    from pywinauto import Desktop
+    import win32gui
+    import win32con
+    from pywinauto import Application
 
-    desktop = Desktop(backend="uia")
-    for w in desktop.windows():
-        title = w.window_text()
-        if any(kw in title for kw in config.OKOSC_WINDOW_KEYWORDS):
-            return w
-    raise RuntimeError(
-        "OKOSC 프로그램 창을 찾을 수 없습니다.\n"
-        "OKOSC를 먼저 실행해 주세요.\n"
-        f"찾는 키워드: {config.OKOSC_WINDOW_KEYWORDS}\n"
-        "config.py 의 OKOSC_WINDOW_KEYWORDS를 실제 창 제목으로 수정하세요."
-    )
+    hwnd_list = []
+    def enum_cb(hwnd, _):
+        title = win32gui.GetWindowText(hwnd)
+        cls = win32gui.GetClassName(hwnd)
+        if any(kw in title for kw in config.OKOSC_WINDOW_KEYWORDS) and 'WindowsForms' in cls:
+            hwnd_list.append(hwnd)
+    win32gui.EnumWindows(enum_cb, None)
+
+    if not hwnd_list:
+        raise RuntimeError(
+            "OKOSC 프로그램 창을 찾을 수 없습니다.\n"
+            "OKOSC를 먼저 실행해 주세요.\n"
+            f"찾는 키워드: {config.OKOSC_WINDOW_KEYWORDS}"
+        )
+
+    hwnd = hwnd_list[0]
+    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    win32gui.SetForegroundWindow(hwnd)
+    time.sleep(0.3)
+
+    app = Application(backend="win32").connect(handle=hwnd)
+    return app.window(handle=hwnd)
 
 
 def print_okosc_controls():

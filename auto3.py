@@ -397,7 +397,7 @@ class Auto3App:
         except Exception as e:
             self._log_msg(f"오류 발생: {e}")
             self._put("status", "❌ 오류 발생")
-            self.root.after(0, lambda: messagebox.showerror(
+            self.root.after(0, lambda e=e: messagebox.showerror(
                 "오류", str(e), parent=self.root
             ))
         finally:
