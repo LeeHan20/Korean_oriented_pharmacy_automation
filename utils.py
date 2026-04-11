@@ -105,53 +105,190 @@ def xls_to_xlsx(xls_path: str) -> str:
     return xlsx_path
 
 
-# ─── OKOSC 통합문서 Excel 찾기 ───────────────────────────────────────────────
-
-def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
+def open_excel_visible(path: str):
     """
-    현재 열려 있는 Excel 통합 문서 중 '통합 문서 N' 형식에서
-    N이 가장 큰 워크북을 반환합니다.
-
-    wait_new=True 이면 before_names 에 없는 새 통합문서가
-    나타날 때까지 최대 OKOSC_WAIT_TIMEOUT 초 대기합니다.
+    파일을 보이는 Excel로 열어 GetActiveObject가 잡힐 수 있도록 합니다.
+    이미 같은 경로가 열려 있으면 아무 것도 하지 않습니다.
+    반환: win32com Workbook 객체
     """
     import win32com.client
     import pythoncom
 
     pythoncom.CoInitialize()
-    pattern = re.compile(r'^통합 문서\s*(\d+)$')
-    deadline = time.time() + config.OKOSC_WAIT_TIMEOUT
+    abs_path = os.path.abspath(path)
+
+    # 이미 COM으로 접근 가능한 Excel에 열려 있는지 확인
+    try:
+        xl = win32com.client.GetActiveObject("Excel.Application")
+        for wb in xl.Workbooks:
+            if os.path.abspath(wb.FullName) == abs_path:
+                return wb
+        # 같은 앱에 없으면 열기
+        xl.Visible = True
+        return xl.Workbooks.Open(abs_path)
+    except Exception:
+        pass
+
+    # Excel 자체가 없으면 새로 띄우기
+    xl = win32com.client.Dispatch("Excel.Application")
+    xl.Visible = True
+    xl.DisplayAlerts = False
+    return xl.Workbooks.Open(abs_path)
+
+
+# ─── OKOSC 통합문서 Excel 찾기 ───────────────────────────────────────────────
+
+def _get_xl_app_from_xlmain(xlmain_hwnd: int):
+    """
+    XLMAIN 창 핸들에서 Excel Application COM 객체를 가져옵니다.
+    GetActiveObject로 접근되지 않는 별도 Excel 프로세스(OKOSC가 연 경우)에서 사용합니다.
+    """
+    import ctypes
+    import win32com.client
+    import win32gui
+    import pythoncom
+
+    OBJID_NATIVEOM = 0xFFFFFFF0
+
+    # XLMAIN 아래의 EXCEL7 자식 창 찾기
+    excel7 = win32gui.FindWindowEx(xlmain_hwnd, 0, "EXCEL7", None)
+    if not excel7:
+        return None
+
+    # IDispatch IID: {00020400-0000-0000-C000-000000000046} (LE 인코딩)
+    IID_BYTES = (ctypes.c_byte * 16)(
+        0x00, 0x04, 0x02, 0x00,  # Data1: 0x00020400 LE
+        0x00, 0x00,               # Data2: 0x0000 LE
+        0x00, 0x00,               # Data3: 0x0000 LE
+        0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46  # Data4
+    )
+    obj_ptr = ctypes.c_void_p()
+    hr = ctypes.windll.oleacc.AccessibleObjectFromWindow(
+        excel7,
+        ctypes.c_ulong(OBJID_NATIVEOM),
+        ctypes.byref(IID_BYTES),
+        ctypes.byref(obj_ptr)
+    )
+    if hr != 0 or not obj_ptr.value:
+        return None
+
+    try:
+        p = pythoncom.ObjectFromAddress(obj_ptr.value, pythoncom.IID_IDispatch)
+        return win32com.client.Dispatch(p).Application
+    except Exception:
+        return None
+
+
+def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
+    """
+    OKOSC 택배목록 통합문서를 임시 파일로 저장한 뒤 COM 워크북으로 반환합니다.
+    1) COM(_get_xl_app_from_xlmain)으로 SaveAs 시도
+    2) 실패 시 F12 UI 자동화로 저장
+    3) 저장된 파일을 새 Excel 인스턴스로 열어 반환
+    """
+    import win32com.client
+    import win32gui
+    import win32con
+    import pythoncom
+    import pyautogui
+
+    pythoncom.CoInitialize()
+    title_pat = re.compile(r'통합 문서\d+')
+    wb_pat = re.compile(r'^통합 문서(\d+)(\.xlsx?)?$')
+    # 임시 저장 경로 (ASCII, 프로젝트 폴더)
+    temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_okosc_temp.xlsx")
+    abs_temp = os.path.abspath(temp_path)
+    deadline = time.time() + 15
 
     while True:
+        # XLMAIN 창 중 "통합 문서N" 타이틀인 것 찾기
+        target_hwnd = None
+        def _enum(hwnd, _):
+            nonlocal target_hwnd
+            if win32gui.GetClassName(hwnd) == "XLMAIN":
+                if title_pat.search(win32gui.GetWindowText(hwnd)):
+                    target_hwnd = hwnd
+        win32gui.EnumWindows(_enum, None)
+
+        if target_hwnd:
+            # ── 방법 1: COM으로 SaveAs ──────────────────────────────────
+            app = _get_xl_app_from_xlmain(target_hwnd)
+            if app:
+                try:
+                    for wb in app.Workbooks:
+                        if wb_pat.match(wb.Name):
+                            if os.path.exists(abs_temp):
+                                os.remove(abs_temp)
+                            app.DisplayAlerts = False
+                            wb.SaveAs(abs_temp, 51)   # 51 = xlOpenXMLWorkbook
+                            app.DisplayAlerts = True
+                            return wb   # Name이 abs_temp로 바뀐 동일 wb
+                except Exception:
+                    pass
+
+            # ── 방법 2: F12 UI 자동화로 저장 ────────────────────────────
+            try:
+                if os.path.exists(abs_temp):
+                    os.remove(abs_temp)
+
+                win32gui.ShowWindow(target_hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(target_hwnd)
+                time.sleep(0.5)
+
+                pyautogui.hotkey('f12')          # 다른 이름으로 저장
+                time.sleep(1.5)
+
+                # 파일 이름 필드: 전체 선택 후 경로 입력
+                pyautogui.hotkey('ctrl', 'a')
+                time.sleep(0.1)
+                pyautogui.write(abs_temp, interval=0.02)
+                pyautogui.press('enter')
+                time.sleep(0.5)
+
+                # 덮어쓰기·형식 확인 다이얼로그 처리 (Enter로 수락)
+                for _ in range(3):
+                    for dlg_name in ("Microsoft Excel", "Excel"):
+                        hw = win32gui.FindWindow(None, dlg_name)
+                        if hw and win32gui.IsWindowVisible(hw):
+                            pyautogui.press('enter')
+                            time.sleep(0.3)
+
+                # 파일 생성 완료 대기 후 새 COM 인스턴스로 열기
+                fi_deadline = time.time() + 8
+                while time.time() < fi_deadline:
+                    if os.path.exists(abs_temp) and os.path.getsize(abs_temp) > 0:
+                        time.sleep(0.3)   # 쓰기 완료 여유
+                        xl2 = win32com.client.Dispatch("Excel.Application")
+                        xl2.Visible = False
+                        xl2.DisplayAlerts = False
+                        return xl2.Workbooks.Open(abs_temp)
+                    time.sleep(0.3)
+            except Exception:
+                pass
+
+        # ── 방법 3: GetActiveObject fallback ────────────────────────────
         try:
             xl = win32com.client.GetActiveObject("Excel.Application")
+            max_n, target_wb = -1, None
+            for wb in xl.Workbooks:
+                m = wb_pat.match(wb.Name)
+                if m:
+                    n = int(m.group(1))
+                    if n > max_n:
+                        max_n, target_wb = n, wb
+            if target_wb:
+                return target_wb
         except Exception:
-            if time.time() < deadline:
-                time.sleep(0.5)
-                continue
-            raise RuntimeError("Excel 응용 프로그램을 찾을 수 없습니다.")
+            pass
 
-        max_n = -1
-        target_wb = None
-        for wb in xl.Workbooks:
-            m = pattern.match(wb.Name)
-            if m:
-                n = int(m.group(1))
-                if wait_new and before_names and wb.Name in before_names:
-                    continue
-                if n > max_n:
-                    max_n = n
-                    target_wb = wb
-
-        if target_wb is not None:
-            return target_wb
-
-        if not wait_new or time.time() >= deadline:
-            raise RuntimeError(
-                "'통합 문서 N' 형식의 Excel 창을 찾을 수 없습니다.\n"
-                "OKOSC에서 택배목록을 먼저 열어주세요."
-            )
+        if time.time() >= deadline:
+            break
         time.sleep(0.5)
+
+    raise RuntimeError(
+        "'통합 문서 N' 형식의 Excel 창을 찾을 수 없습니다.\n"
+        "OKOSC에서 택배목록을 먼저 열어주세요."
+    )
 
 
 def list_excel_workbook_names() -> set:
@@ -169,30 +306,64 @@ def list_excel_workbook_names() -> set:
 
 # ─── 셀 색상 판별 ─────────────────────────────────────────────────────────────
 
-def is_light_green(cell) -> bool:
+def _is_greenish(interior_color_int: int) -> bool:
+    """win32com Interior.Color 값이 녹색 계열인지 판별합니다."""
+    r = interior_color_int & 0xFF
+    g = (interior_color_int >> 8) & 0xFF
+    b = (interior_color_int >> 16) & 0xFF
+    return g > r and g > b and g > 100
+
+
+def get_iksan_green_cells(iksan_path: str) -> list:
     """
-    openpyxl 셀의 배경색이 '연한 녹색'인지 판별합니다.
-    RGB 기준: Green 채널이 Red/Blue 보다 크고 밝은 경우.
+    익산대장 xlsx에서 녹색 계열 배경의 L열(12번) 셀을 읽어
+    [(이름, 전화번호, 주소), ...] 리스트로 반환합니다. (win32com 사용)
+    각 셀 형식: "이름 전화번호 주소" (한 셀에 모두 포함)
     """
-    fill = cell.fill
-    if fill is None or fill.fill_type in (None, "none"):
-        return False
+    import win32com.client
+    import pythoncom
+
+    pythoncom.CoInitialize()
+    results = []
+    xl = None
     try:
-        fg = fill.fgColor
-        if fg.type == "rgb":
-            rgb = fg.rgb  # "AARRGGBB" 형식
-            if len(rgb) == 8:
-                r = int(rgb[2:4], 16)
-                g = int(rgb[4:6], 16)
-                b = int(rgb[6:8], 16)
-                # 녹색 채널이 지배적이고 밝은 색
-                return g > r and g > b and g > 100
-        elif fg.type == "theme":
-            # 테마 색상 9번(Accent 6)이 엑셀 기본 '연한 녹색'에 해당하는 경우가 많음
-            return fg.theme == 9
-    except Exception:
-        pass
-    return False
+        xl = win32com.client.Dispatch("Excel.Application")
+        xl.Visible = False
+        xl.DisplayAlerts = False
+        wb_com = xl.Workbooks.Open(os.path.abspath(iksan_path))
+        ws_com = wb_com.Worksheets(1)
+
+        used_rows = ws_com.UsedRange.Rows.Count
+        phone_pat = re.compile(r'\d{2,4}[-. ]?\d{3,4}[-. ]?\d{4}')
+
+        for row in range(1, used_rows + 1):
+            cell = ws_com.Cells(row, 12)
+            val = cell.Value
+            if not val:
+                continue
+            if not _is_greenish(int(cell.Interior.Color)):
+                continue
+
+            text = str(val).strip()
+            m = phone_pat.search(text)
+            if not m:
+                continue
+            name = text[:m.start()].strip()
+            phone = m.group()
+            addr = text[m.end():].strip().lstrip(',').strip()
+            if name:
+                results.append((name, phone, addr))
+
+        wb_com.Close(False)
+    finally:
+        if xl:
+            try:
+                xl.Quit()
+            except Exception:
+                pass
+        pythoncom.CoUninitialize()
+
+    return results
 
 
 # ─── 익산대장 파일 찾기 ───────────────────────────────────────────────────────

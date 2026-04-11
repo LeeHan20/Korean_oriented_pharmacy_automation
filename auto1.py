@@ -138,6 +138,19 @@ def step5_automate_okosc() -> object:
     okosc_win.set_focus()
     time.sleep(0.5)
 
+    # ── 검색 기준 → 진행상태 설정 (auto_id=ulCboSearch) ──────────────────────
+    try:
+        search_type_ctrl = okosc_win.child_window(auto_id="ulCboSearch")
+        rect = search_type_ctrl.rectangle()
+        pyautogui.click((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+        time.sleep(0.15)
+        send_keys('^a')
+        send_keys('진행상태')
+        send_keys('{ENTER}')
+        time.sleep(0.3)
+    except Exception:
+        pass
+
     def _set_ultra_date(auto_id, date_str):
         """
         UltraDateTimeEditor에 날짜 입력.
@@ -169,14 +182,30 @@ def step5_automate_okosc() -> object:
     _set_ultra_date("ulDteSearchStart", start_date)
     _set_ultra_date("ulDteSearchEnd", end_date)
 
-    # ── 진행상태 → 조제 선택 (auto_id=ulCboSearchCBJState) ───────────────────
-    state_ctrl = okosc_win.child_window(auto_id="ulCboSearchCBJState")
-    rect = state_ctrl.rectangle()
-    pyautogui.click((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+    # TAB 후 드롭다운이 열렸을 수 있으므로 ESC로 닫기
+    send_keys('{ESC}')
     time.sleep(0.2)
+    okosc_win.set_focus()
+    time.sleep(0.2)
+
+    # ── 진행상태 → 조제 선택 (auto_id=ulCboSearchCBJState) ───────────────────
+    try:
+        state_ctrl = okosc_win.child_window(auto_id="ulCboSearchCBJState")
+        rect = state_ctrl.rectangle()
+        pyautogui.click((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+    except Exception:
+        # 못 찾으면 title로 재시도
+        try:
+            state_ctrl = okosc_win.child_window(title_re="조제|대기|완료|취소",
+                                                class_name_re=".*UltraComboEditor.*")
+            rect = state_ctrl.rectangle()
+            pyautogui.click((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+        except Exception:
+            pass  # 이미 조제로 되어 있을 경우 무시
+    time.sleep(0.15)
     send_keys('^a')
     send_keys('조제')
-    send_keys('{TAB}')
+    send_keys('{ENTER}')
     time.sleep(0.3)
 
     # ── 검색 버튼 클릭 (auto_id=ulBtnSearchCBJ) ──────────────────────────────
@@ -282,30 +311,13 @@ def step9_normalize_id_columns(xlsx_path: str, start_row: int, end_row: int):
 
 def step10_11_paste_iksan_data(xlsx_path: str):
     """
-    익산대장 L열 연한 녹색 셀 → 택배관리 마지막 행에 추가.
+    익산대장 L열 녹색 계열 셀 → 택배관리 마지막 행에 추가.
     이름(A), 전화(D), 주소(C), F=1, G=4400, H=한약
+    각 셀 형식: "이름 전화번호 주소" (한 셀에 모두 포함)
     """
     iksan_path = utils.find_iksan_file()
-    iksan_wb = openpyxl.load_workbook(iksan_path, data_only=True)
-    iksan_ws = iksan_wb.worksheets[0]  # 가장 왼쪽 시트
 
-    # L열(column=12)에서 연한 녹색 셀 그룹 추출
-    # 이름, 전화번호, 주소가 연속 3셀로 녹색 처리되어 있다고 가정
-    green_cells = []
-    for row in range(1, iksan_ws.max_row + 1):
-        cell = iksan_ws.cell(row=row, column=12)
-        if utils.is_light_green(cell) and cell.value not in (None, ""):
-            green_cells.append(str(cell.value).strip())
-
-    iksan_wb.close()
-
-    # 3개씩 묶어서 (이름, 전화번호, 주소) 파싱
-    people = []
-    for i in range(0, len(green_cells) - 2, 3):
-        name  = green_cells[i]
-        phone = green_cells[i + 1]
-        addr  = green_cells[i + 2]
-        people.append((name, phone, addr))
+    people = utils.get_iksan_green_cells(iksan_path)
 
     if not people:
         # 녹색 셀이 없으면 건너뜀
