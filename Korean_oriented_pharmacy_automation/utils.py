@@ -77,31 +77,102 @@ def get_latest_file(directory: str, pattern: str) -> str:
 
 # ─── Excel 변환 ──────────────────────────────────────────────────────────────
 
+def _parse_html_table_to_xlsx(html_path: str, xlsx_path: str):
+    """HTML 테이블(XLS로 위장된 파일)을 파싱해 XLSX로 저장."""
+    from html.parser import HTMLParser
+    import openpyxl
+
+    class TableParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.rows = []
+            self._cur_row = None
+            self._cur_cell = None
+
+        def handle_starttag(self, tag, attrs):
+            if tag == 'tr':
+                self._cur_row = []
+            elif tag in ('td', 'th'):
+                self._cur_cell = []
+
+        def handle_endtag(self, tag):
+            if tag == 'tr':
+                if self._cur_row is not None:
+                    self.rows.append(self._cur_row)
+                    self._cur_row = None
+            elif tag in ('td', 'th'):
+                if self._cur_row is not None and self._cur_cell is not None:
+                    self._cur_row.append(''.join(self._cur_cell).strip())
+                self._cur_cell = None
+
+        def handle_data(self, data):
+            if self._cur_cell is not None:
+                self._cur_cell.append(data)
+
+    for enc in ('utf-8-sig', 'euc-kr', 'cp949', 'utf-8'):
+        try:
+            with open(html_path, 'r', encoding=enc, errors='strict') as f:
+                content = f.read()
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    else:
+        with open(html_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+
+    parser = TableParser()
+    parser.feed(content)
+
+    wb_w = openpyxl.Workbook()
+    ws_w = wb_w.active
+    for row_data in parser.rows:
+        if any(c for c in row_data):
+            ws_w.append(row_data)
+    wb_w.save(xlsx_path)
+
+
 def xls_to_xlsx(xls_path: str) -> str:
     """
-    XLS 파일을 XLSX 로 안전하게 변환합니다 (win32com 사용).
+    XLS 파일을 XLSX 로 변환합니다 (xlrd + openpyxl, COM/Excel 불필요).
+    서버가 HTML을 .xls로 내려보내는 경우도 처리합니다.
     원본 XLS 파일은 그대로 유지됩니다.
     """
-    import win32com.client
-    import pythoncom
-
-    pythoncom.CoInitialize()
+    import xlrd
+    import openpyxl
 
     xls_path = os.path.abspath(xls_path)
     xlsx_path = os.path.splitext(xls_path)[0] + ".xlsx"
 
-    xl_app = win32com.client.Dispatch("Excel.Application")
-    xl_app.Visible = False
-    xl_app.DisplayAlerts = False
+    # 파일 헤더 확인: HTML 위장 XLS 감지 (서버가 HTML을 .xls로 내려보내는 경우)
+    with open(xls_path, 'rb') as f:
+        header = f.read(512)
+    if header.lstrip().startswith(b'<'):
+        _parse_html_table_to_xlsx(xls_path, xlsx_path)
+        return xlsx_path
 
-    try:
-        wb = xl_app.Workbooks.Open(xls_path)
-        wb.SaveAs(xlsx_path, FileFormat=51)   # 51 = xlOpenXMLWorkbook
-        wb.Close(SaveChanges=False)
-    finally:
-        xl_app.Quit()
-        pythoncom.CoUninitialize()
+    # 진짜 XLS 바이너리
+    wb_r = xlrd.open_workbook(xls_path, formatting_info=False)
+    wb_w = openpyxl.Workbook()
+    wb_w.remove(wb_w.active)
 
+    for sheet_idx in range(wb_r.nsheets):
+        ws_r = wb_r.sheet_by_index(sheet_idx)
+        ws_w = wb_w.create_sheet(title=ws_r.name)
+        for row in range(ws_r.nrows):
+            for col in range(ws_r.ncols):
+                cell = ws_r.cell(row, col)
+                if cell.ctype == xlrd.XL_CELL_DATE:
+                    import xlrd.xldate as xldate
+                    val = xldate.xldate_as_datetime(cell.value, wb_r.datemode)
+                elif cell.ctype == xlrd.XL_CELL_BOOLEAN:
+                    val = bool(cell.value)
+                elif cell.ctype in (xlrd.XL_CELL_ERROR, xlrd.XL_CELL_EMPTY):
+                    val = None
+                else:
+                    val = cell.value
+                ws_w.cell(row=row + 1, column=col + 1).value = val
+
+    wb_w.save(xlsx_path)
     return xlsx_path
 
 
@@ -211,7 +282,7 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
         win32gui.EnumWindows(_enum, None)
 
         if target_hwnd:
-            # ── 방법 1: COM으로 SaveAs ──────────────────────────────────
+            # ── 방법 1: COM으로 SaveCopyAs (OKOSC 워크북 타이틀 유지) ──────
             app = _get_xl_app_from_xlmain(target_hwnd)
             if app:
                 try:
@@ -220,9 +291,13 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
                             if os.path.exists(abs_temp):
                                 os.remove(abs_temp)
                             app.DisplayAlerts = False
-                            wb.SaveAs(abs_temp, 51)   # 51 = xlOpenXMLWorkbook
+                            wb.SaveCopyAs(abs_temp)   # 복사본만 저장, 원본 이름·상태 유지
                             app.DisplayAlerts = True
-                            return wb   # Name이 abs_temp로 바뀐 동일 wb
+                            # OKOSC 워크북은 그대로 두고 복사본을 새 인스턴스로 열기
+                            xl2 = win32com.client.Dispatch("Excel.Application")
+                            xl2.Visible = False
+                            xl2.DisplayAlerts = False
+                            return xl2.Workbooks.Open(abs_temp)
                 except Exception:
                     pass
 

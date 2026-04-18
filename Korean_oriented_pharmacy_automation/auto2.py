@@ -195,9 +195,11 @@ def step5_click_confirm(driver):
     wait.until(EC.frame_to_be_available_and_switch_to_it("right"))
     confirm_btn = wait.until(EC.element_to_be_clickable(
         (By.XPATH,
-         "//a[contains(text(),'저장하기')] | "")
+         "//a[contains(text(),'저장하기')]")
     ))
-    confirm_btn.click()
+
+    print(f"버튼이 뭐다? : {confirm_btn}")
+    # confirm_btn.click()
     driver.switch_to.default_content()
 
 
