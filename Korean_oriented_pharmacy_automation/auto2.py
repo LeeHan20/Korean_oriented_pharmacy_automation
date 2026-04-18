@@ -95,27 +95,34 @@ def step2_get_rosen_excel(before_ts: float) -> str:
     )
 
 
+def _cell_to_str(cell) -> str:
+    """openpyxl 셀 값을 서버(EUC-KR 파싱) 호환 문자열로 변환."""
+    from datetime import datetime as _dt, date as _date
+    v = cell.value
+    if v is None:
+        return ""
+    if isinstance(v, float):
+        return str(int(v)) if v == int(v) else str(v)
+    if isinstance(v, (_dt, _date)):
+        return v.strftime("%Y-%m-%d")
+    return str(v)
+
+
 def step3_excel_to_csv(excel_path: str) -> str:
     """
-    Excel(xlsx/xls) → CSV 변환.
-    모든 셀 값을 문자열로 보존하여 데이터 손실 방지.
+    xlsx → CSV 변환.
+    사이트 서버가 EUC-KR로 파싱하므로 EUC-KR 인코딩으로 저장.
+    숫자 float → int 변환으로 운송장번호 등 손실 방지.
     """
     csv_path = os.path.splitext(excel_path)[0] + ".csv"
-
-    # xls 파일이면 먼저 xlsx로 변환
-    if excel_path.lower().endswith(".xls"):
-        excel_path = utils.xls_to_xlsx(excel_path)
 
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
 
-    with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
+    with open(csv_path, "w", newline="", encoding="euc-kr", errors="replace") as f:
         writer = csv.writer(f)
         for row in ws.iter_rows():
-            writer.writerow([
-                "" if cell.value is None else str(cell.value)
-                for cell in row
-            ])
+            writer.writerow([_cell_to_str(cell) for cell in row])
 
     wb.close()
     return csv_path
@@ -188,9 +195,7 @@ def step5_click_confirm(driver):
     wait.until(EC.frame_to_be_available_and_switch_to_it("right"))
     confirm_btn = wait.until(EC.element_to_be_clickable(
         (By.XPATH,
-         "//button[contains(text(),'확인')] | "
-         "//input[@type='button' and contains(@value,'확인')] | "
-         "//input[@type='submit' and contains(@value,'확인')]")
+         "//a[contains(text(),'저장하기')] | "")
     ))
     confirm_btn.click()
     driver.switch_to.default_content()
