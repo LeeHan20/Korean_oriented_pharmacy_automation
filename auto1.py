@@ -63,9 +63,19 @@ def step1_download_excel(driver) -> str:
             EC.url_contains("ongkihanyak")
         )
 
-    # 페이지는 frameset 구조 - right 프레임에 주문관리 내용이 있음
-    driver.switch_to.frame("right")
     wait = WebDriverWait(driver, config.PAGE_LOAD_TIMEOUT)
+
+    # 주문관리 버튼은 left(사이드 메뉴) 프레임에 있음
+    wait.until(EC.frame_to_be_available_and_switch_to_it("left"))
+    order_management_btn = wait.until(EC.element_to_be_clickable(
+        (By.XPATH, "//a[@href='../../modules/shop/admin/admin_list.html']")
+    ))
+    order_management_btn.click()
+
+    # 클릭 후 right 프레임이 주문관리 페이지로 바뀌므로
+    # default_content로 빠져나온 뒤 right 프레임에 진입
+    driver.switch_to.default_content()
+    wait.until(EC.frame_to_be_available_and_switch_to_it("right"))
 
     # 조제중 선택 (SELECT name=fs_status)
     sel_status = wait.until(EC.presence_of_element_located(
@@ -213,11 +223,10 @@ def step5_automate_okosc() -> object:
     time.sleep(2)
 
     # ── 택배목록 버튼 클릭 (auto_id=ulBtnTekBe) → Excel 파일 열림 ───────────
-    existing_names = utils.list_excel_workbook_names()
     okosc_win.child_window(auto_id="ulBtnTekBe").click_input()
 
-    # ── 새 통합문서가 열릴 때까지 대기 후 COM 연결 ───────────────────────────
-    okosc_wb = utils.get_okosc_workbook(wait_new=True, before_names=existing_names)
+    # ── 통합문서가 열릴 때까지 대기 후 COM 연결 ──────────────────────────────
+    okosc_wb = utils.get_okosc_workbook()
     return okosc_wb
 
 
