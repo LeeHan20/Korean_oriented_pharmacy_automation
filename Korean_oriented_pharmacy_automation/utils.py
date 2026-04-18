@@ -1,0 +1,505 @@
+"""
+한약국 자동화 프로그램 - 공통 유틸리티 함수
+"""
+
+import os
+import re
+import glob
+import time
+import queue
+import threading
+import tkinter as tk
+from tkinter import messagebox
+from pathlib import Path
+from datetime import datetime, timedelta
+
+import config
+
+
+# ─── Chrome / Selenium ───────────────────────────────────────────────────────
+
+def connect_chrome():
+    """
+    원격 디버깅 모드로 실행 중인 Chrome에 연결합니다.
+    '크롬_디버깅모드_실행.bat'으로 Chrome을 먼저 실행해야 합니다.
+    """
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+
+    opts = Options()
+    opts.add_experimental_option(
+        "debuggerAddress", f"localhost:{config.CHROME_DEBUG_PORT}"
+    )
+    try:
+        driver = webdriver.Chrome(options=opts)
+        driver.implicitly_wait(5)
+        return driver
+    except Exception as e:
+        raise ConnectionError(
+            f"Chrome 연결 실패.\n"
+            f"'크롬_디버깅모드_실행.bat'으로 Chrome을 실행한 뒤 다시 시도하세요.\n"
+            f"상세: {e}"
+        )
+
+
+# ─── 파일 다운로드 대기 ───────────────────────────────────────────────────────
+
+def wait_for_new_file(directory: str, pattern: str, before_mtime: float,
+                      timeout: int = None) -> str:
+    """
+    directory 안에서 pattern 에 맞고 before_mtime 이후에 생성된
+    최신 파일이 다운로드 완료될 때까지 기다립니다.
+    """
+    if timeout is None:
+        timeout = config.DOWNLOAD_TIMEOUT
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        candidates = [
+            f for f in glob.glob(os.path.join(directory, pattern))
+            if os.path.getmtime(f) >= before_mtime
+            and not f.endswith(".crdownload")
+            and not f.endswith(".tmp")
+        ]
+        if candidates:
+            return max(candidates, key=os.path.getmtime)
+        time.sleep(0.5)
+    raise TimeoutError(f"파일 다운로드 타임아웃 ({timeout}초). 패턴: {pattern}")
+
+
+def get_latest_file(directory: str, pattern: str) -> str:
+    """directory 에서 pattern 에 맞는 가장 최신 파일 경로 반환."""
+    files = glob.glob(os.path.join(directory, pattern))
+    if not files:
+        raise FileNotFoundError(f"파일을 찾을 수 없습니다: {os.path.join(directory, pattern)}")
+    return max(files, key=os.path.getmtime)
+
+
+# ─── Excel 변환 ──────────────────────────────────────────────────────────────
+
+def xls_to_xlsx(xls_path: str) -> str:
+    """
+    XLS 파일을 XLSX 로 안전하게 변환합니다 (win32com 사용).
+    원본 XLS 파일은 그대로 유지됩니다.
+    """
+    import win32com.client
+    import pythoncom
+
+    pythoncom.CoInitialize()
+
+    xls_path = os.path.abspath(xls_path)
+    xlsx_path = os.path.splitext(xls_path)[0] + ".xlsx"
+
+    xl_app = win32com.client.Dispatch("Excel.Application")
+    xl_app.Visible = False
+    xl_app.DisplayAlerts = False
+
+    try:
+        wb = xl_app.Workbooks.Open(xls_path)
+        wb.SaveAs(xlsx_path, FileFormat=51)   # 51 = xlOpenXMLWorkbook
+        wb.Close(SaveChanges=False)
+    finally:
+        xl_app.Quit()
+        pythoncom.CoUninitialize()
+
+    return xlsx_path
+
+
+def open_excel_visible(path: str):
+    """
+    파일을 보이는 Excel로 열어 GetActiveObject가 잡힐 수 있도록 합니다.
+    이미 같은 경로가 열려 있으면 아무 것도 하지 않습니다.
+    반환: win32com Workbook 객체
+    """
+    import win32com.client
+    import pythoncom
+
+    pythoncom.CoInitialize()
+    abs_path = os.path.abspath(path)
+
+    # 이미 COM으로 접근 가능한 Excel에 열려 있는지 확인
+    try:
+        xl = win32com.client.GetActiveObject("Excel.Application")
+        for wb in xl.Workbooks:
+            if os.path.abspath(wb.FullName) == abs_path:
+                return wb
+        # 같은 앱에 없으면 열기
+        xl.Visible = True
+        return xl.Workbooks.Open(abs_path)
+    except Exception:
+        pass
+
+    # Excel 자체가 없으면 새로 띄우기
+    xl = win32com.client.Dispatch("Excel.Application")
+    xl.Visible = True
+    xl.DisplayAlerts = False
+    return xl.Workbooks.Open(abs_path)
+
+
+# ─── OKOSC 통합문서 Excel 찾기 ───────────────────────────────────────────────
+
+def _get_xl_app_from_xlmain(xlmain_hwnd: int):
+    """
+    XLMAIN 창 핸들에서 Excel Application COM 객체를 가져옵니다.
+    GetActiveObject로 접근되지 않는 별도 Excel 프로세스(OKOSC가 연 경우)에서 사용합니다.
+    """
+    import ctypes
+    import win32com.client
+    import win32gui
+    import pythoncom
+
+    OBJID_NATIVEOM = 0xFFFFFFF0
+
+    # XLMAIN 아래의 EXCEL7 자식 창 찾기
+    excel7 = win32gui.FindWindowEx(xlmain_hwnd, 0, "EXCEL7", None)
+    if not excel7:
+        return None
+
+    # IDispatch IID: {00020400-0000-0000-C000-000000000046} (LE 인코딩)
+    IID_BYTES = (ctypes.c_byte * 16)(
+        0x00, 0x04, 0x02, 0x00,  # Data1: 0x00020400 LE
+        0x00, 0x00,               # Data2: 0x0000 LE
+        0x00, 0x00,               # Data3: 0x0000 LE
+        0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46  # Data4
+    )
+    obj_ptr = ctypes.c_void_p()
+    hr = ctypes.windll.oleacc.AccessibleObjectFromWindow(
+        excel7,
+        ctypes.c_ulong(OBJID_NATIVEOM),
+        ctypes.byref(IID_BYTES),
+        ctypes.byref(obj_ptr)
+    )
+    if hr != 0 or not obj_ptr.value:
+        return None
+
+    try:
+        p = pythoncom.ObjectFromAddress(obj_ptr.value, pythoncom.IID_IDispatch)
+        return win32com.client.Dispatch(p).Application
+    except Exception:
+        return None
+
+
+def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
+    """
+    OKOSC 택배목록 통합문서를 임시 파일로 저장한 뒤 COM 워크북으로 반환합니다.
+    1) COM(_get_xl_app_from_xlmain)으로 SaveAs 시도
+    2) 실패 시 F12 UI 자동화로 저장
+    3) 저장된 파일을 새 Excel 인스턴스로 열어 반환
+    """
+    import win32com.client
+    import win32gui
+    import win32con
+    import pythoncom
+    import pyautogui
+
+    pythoncom.CoInitialize()
+    title_pat = re.compile(r'통합 문서\d+')
+    wb_pat = re.compile(r'^통합 문서(\d+)(\.xlsx?)?$')
+    # 임시 저장 경로 (ASCII, 프로젝트 폴더)
+    temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_okosc_temp.xlsx")
+    abs_temp = os.path.abspath(temp_path)
+    deadline = time.time() + 15
+
+    while True:
+        # XLMAIN 창 중 "통합 문서N" 타이틀인 것 찾기
+        target_hwnd = None
+        def _enum(hwnd, _):
+            nonlocal target_hwnd
+            if win32gui.GetClassName(hwnd) == "XLMAIN":
+                if title_pat.search(win32gui.GetWindowText(hwnd)):
+                    target_hwnd = hwnd
+        win32gui.EnumWindows(_enum, None)
+
+        if target_hwnd:
+            # ── 방법 1: COM으로 SaveAs ──────────────────────────────────
+            app = _get_xl_app_from_xlmain(target_hwnd)
+            if app:
+                try:
+                    for wb in app.Workbooks:
+                        if wb_pat.match(wb.Name):
+                            if os.path.exists(abs_temp):
+                                os.remove(abs_temp)
+                            app.DisplayAlerts = False
+                            wb.SaveAs(abs_temp, 51)   # 51 = xlOpenXMLWorkbook
+                            app.DisplayAlerts = True
+                            return wb   # Name이 abs_temp로 바뀐 동일 wb
+                except Exception:
+                    pass
+
+            # ── 방법 2: F12 UI 자동화로 저장 ────────────────────────────
+            try:
+                if os.path.exists(abs_temp):
+                    os.remove(abs_temp)
+
+                win32gui.ShowWindow(target_hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(target_hwnd)
+                time.sleep(0.5)
+
+                pyautogui.hotkey('f12')          # 다른 이름으로 저장
+                time.sleep(1.5)
+
+                # 파일 이름 필드: 전체 선택 후 경로 입력
+                pyautogui.hotkey('ctrl', 'a')
+                time.sleep(0.1)
+                pyautogui.write(abs_temp, interval=0.02)
+                pyautogui.press('enter')
+                time.sleep(0.5)
+
+                # 덮어쓰기·형식 확인 다이얼로그 처리 (Enter로 수락)
+                for _ in range(3):
+                    for dlg_name in ("Microsoft Excel", "Excel"):
+                        hw = win32gui.FindWindow(None, dlg_name)
+                        if hw and win32gui.IsWindowVisible(hw):
+                            pyautogui.press('enter')
+                            time.sleep(0.3)
+
+                # 파일 생성 완료 대기 후 새 COM 인스턴스로 열기
+                fi_deadline = time.time() + 8
+                while time.time() < fi_deadline:
+                    if os.path.exists(abs_temp) and os.path.getsize(abs_temp) > 0:
+                        time.sleep(0.3)   # 쓰기 완료 여유
+                        xl2 = win32com.client.Dispatch("Excel.Application")
+                        xl2.Visible = False
+                        xl2.DisplayAlerts = False
+                        return xl2.Workbooks.Open(abs_temp)
+                    time.sleep(0.3)
+            except Exception:
+                pass
+
+        # ── 방법 3: GetActiveObject fallback ────────────────────────────
+        try:
+            xl = win32com.client.GetActiveObject("Excel.Application")
+            max_n, target_wb = -1, None
+            for wb in xl.Workbooks:
+                m = wb_pat.match(wb.Name)
+                if m:
+                    n = int(m.group(1))
+                    if n > max_n:
+                        max_n, target_wb = n, wb
+            if target_wb:
+                return target_wb
+        except Exception:
+            pass
+
+        if time.time() >= deadline:
+            break
+        time.sleep(0.5)
+
+    raise RuntimeError(
+        "'통합 문서 N' 형식의 Excel 창을 찾을 수 없습니다.\n"
+        "OKOSC에서 택배목록을 먼저 열어주세요."
+    )
+
+
+def list_excel_workbook_names() -> set:
+    """현재 열려 있는 모든 Excel 워크북 이름을 반환합니다."""
+    import win32com.client
+    import pythoncom
+
+    pythoncom.CoInitialize()
+    try:
+        xl = win32com.client.GetActiveObject("Excel.Application")
+        return {wb.Name for wb in xl.Workbooks}
+    except Exception:
+        return set()
+
+
+# ─── 셀 색상 판별 ─────────────────────────────────────────────────────────────
+
+def _is_greenish(interior_color_int: int) -> bool:
+    """win32com Interior.Color 값이 녹색 계열인지 판별합니다."""
+    r = interior_color_int & 0xFF
+    g = (interior_color_int >> 8) & 0xFF
+    b = (interior_color_int >> 16) & 0xFF
+    return g > r and g > b and g > 100
+
+
+def get_iksan_green_cells(iksan_path: str) -> list:
+    """
+    익산대장 xlsx에서 녹색 계열 배경의 L열(12번) 셀을 읽어
+    [(이름, 전화번호, 주소), ...] 리스트로 반환합니다. (win32com 사용)
+    각 셀 형식: "이름 전화번호 주소" (한 셀에 모두 포함)
+    """
+    import win32com.client
+    import pythoncom
+
+    pythoncom.CoInitialize()
+    results = []
+    xl = None
+    try:
+        xl = win32com.client.Dispatch("Excel.Application")
+        xl.Visible = False
+        xl.DisplayAlerts = False
+        wb_com = xl.Workbooks.Open(os.path.abspath(iksan_path))
+        ws_com = wb_com.Worksheets(1)
+
+        used_rows = ws_com.UsedRange.Rows.Count
+        phone_pat = re.compile(r'\d{2,4}[-. ]?\d{3,4}[-. ]?\d{4}')
+
+        for row in range(1, used_rows + 1):
+            cell = ws_com.Cells(row, 12)
+            val = cell.Value
+            if not val:
+                continue
+            if not _is_greenish(int(cell.Interior.Color)):
+                continue
+
+            text = str(val).strip()
+            m = phone_pat.search(text)
+            if not m:
+                continue
+            name = text[:m.start()].strip()
+            phone = m.group()
+            addr = text[m.end():].strip().lstrip(',').strip()
+            if name:
+                results.append((name, phone, addr))
+
+        wb_com.Close(False)
+    finally:
+        if xl:
+            try:
+                xl.Quit()
+            except Exception:
+                pass
+        pythoncom.CoUninitialize()
+
+    return results
+
+
+# ─── 익산대장 파일 찾기 ───────────────────────────────────────────────────────
+
+def find_iksan_file(directory: str = None) -> str:
+    """'익산대장'으로 시작하는 Excel 파일 경로를 반환합니다."""
+    if directory is None:
+        directory = config.IKSAN_FILE_DIR
+
+    for ext in ("*.xlsx", "*.xls", "*.xlsm"):
+        matches = glob.glob(os.path.join(directory, "익산대장*" + ext.lstrip("*")))
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(
+        f"익산대장 파일을 찾을 수 없습니다.\n경로: {directory}"
+    )
+
+
+# ─── Excel 마지막 데이터 행 ───────────────────────────────────────────────────
+
+def get_last_data_row(ws, check_cols=(1,)) -> int:
+    """
+    지정한 열(check_cols, 1-based) 중 하나라도 값이 있는
+    가장 마지막 행 번호를 반환합니다. 데이터가 없으면 0.
+    """
+    for row in range(ws.max_row, 0, -1):
+        if any(ws.cell(row=row, column=c).value not in (None, "") for c in check_cols):
+            return row
+    return 0
+
+
+# ─── 날짜 유틸 ───────────────────────────────────────────────────────────────
+
+def get_search_dates():
+    """(시작일 문자열, 오늘 문자열) 반환. 형식: YYYY-MM-DD"""
+    today = datetime.now()
+    start = today - timedelta(days=config.DATE_RANGE_DAYS)
+    return start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d")
+
+
+# ─── 인간 검토 다이얼로그 ─────────────────────────────────────────────────────
+
+def human_review_dialog(title: str, message: str,
+                        ok_text="계속 진행", cancel_text="중단") -> bool:
+    """
+    tkinter 다이얼로그를 메인 스레드에서 표시합니다.
+    OK → True, Cancel → False
+    """
+    result_holder = [None]
+    event = threading.Event()
+
+    def _show():
+        win = tk.Toplevel()
+        win.title(title)
+        win.grab_set()
+        win.resizable(False, False)
+
+        tk.Label(win, text=message, font=("맑은 고딕", 10),
+                 wraplength=400, justify="left", padx=20, pady=20).pack()
+
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(pady=(0, 15))
+
+        def on_ok():
+            result_holder[0] = True
+            win.destroy()
+            event.set()
+
+        def on_cancel():
+            result_holder[0] = False
+            win.destroy()
+            event.set()
+
+        tk.Button(btn_frame, text=ok_text, command=on_ok,
+                  bg="#4CAF50", fg="white",
+                  font=("맑은 고딕", 10, "bold"), padx=15, pady=5).pack(side="left", padx=5)
+        tk.Button(btn_frame, text=cancel_text, command=on_cancel,
+                  font=("맑은 고딕", 10), padx=15, pady=5).pack(side="left", padx=5)
+
+        win.protocol("WM_DELETE_WINDOW", on_cancel)
+
+    # 메인 스레드에서 창 표시 (caller가 _ROOT 를 전달해야 함)
+    _ROOT.after(0, _show)
+    event.wait()
+    return result_holder[0]
+
+
+# ─── 공유 tkinter 루트 참조 ──────────────────────────────────────────────────
+# 각 auto*.py 에서 실행 시 _ROOT 를 실제 root 로 교체해야 합니다.
+_ROOT: tk.Tk = None
+
+
+def set_root(root: tk.Tk):
+    global _ROOT
+    _ROOT = root
+
+
+# ─── OKOSC 창 찾기 ───────────────────────────────────────────────────────────
+
+def find_okosc_app():
+    """
+    pywinauto를 사용해 OKOSC 애플리케이션 창을 찾습니다.
+    반환: pywinauto WindowSpecification (win32 backend)
+    """
+    import win32gui
+    import win32con
+    from pywinauto import Application
+
+    hwnd_list = []
+    def enum_cb(hwnd, _):
+        title = win32gui.GetWindowText(hwnd)
+        cls = win32gui.GetClassName(hwnd)
+        if any(kw in title for kw in config.OKOSC_WINDOW_KEYWORDS) and 'WindowsForms' in cls:
+            hwnd_list.append(hwnd)
+    win32gui.EnumWindows(enum_cb, None)
+
+    if not hwnd_list:
+        raise RuntimeError(
+            "OKOSC 프로그램 창을 찾을 수 없습니다.\n"
+            "OKOSC를 먼저 실행해 주세요.\n"
+            f"찾는 키워드: {config.OKOSC_WINDOW_KEYWORDS}"
+        )
+
+    hwnd = hwnd_list[0]
+    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    win32gui.SetForegroundWindow(hwnd)
+    time.sleep(0.3)
+
+    app = Application(backend="win32").connect(handle=hwnd)
+    return app.window(handle=hwnd)
+
+
+def print_okosc_controls():
+    """
+    OKOSC 창의 컨트롤 식별자를 출력합니다 (개발/디버깅용).
+    터미널에서 실행: python -c "from utils import print_okosc_controls; print_okosc_controls()"
+    """
+    w = find_okosc_app()
+    w.print_control_identifiers()

@@ -1,0 +1,20 @@
+# 한약국 자동화 프로그램 의존 패키지
+# pip install -r requirements.txt
+
+# Excel 파일 처리
+openpyxl>=3.1.0
+
+# 브라우저 자동화
+selenium>=4.18.0
+webdriver-manager>=4.0.0
+
+# Windows GUI 자동화
+pywinauto>=0.6.8
+pywin32>=306
+pyautogui>=0.9.54
+
+# 화면 캡처 (pyautogui 의존)
+Pillow>=10.0.0
+
+# XLS 파일 읽기 (openpyxl은 xlsx만 지원, xls는 xlrd 필요)
+xlrd>=2.0.1
