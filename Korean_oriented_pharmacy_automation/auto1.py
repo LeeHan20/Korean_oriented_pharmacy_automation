@@ -230,7 +230,7 @@ def step5_automate_okosc() -> object:
     return okosc_wb
 
 
-def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_wb) -> tuple:
+def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
     """
     통합문서 데이터를 택배관리 파일에 붙여넣기.
     - 통합문서 E~I → 택배관리 A~E (이어붙이기)
@@ -238,25 +238,27 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_wb) -> tuple:
     - 새 행 F=1, G=4400, H=한약
     반환: (새 데이터 시작 행, 새 데이터 끝 행)
     """
-    # ── 통합문서에서 데이터 읽기 (win32com) ──────────────────────────────────
+    # ── 통합문서에서 데이터 읽기 (openpyxl - COM 사용 안 함) ─────────────────
     rows_data = []
-    okosc_ws = okosc_wb.Worksheets(1)
-    r = 2  # 1행은 헤더로 가정
-    while True:
-        val_a = okosc_ws.Cells(r, 1).Value
-        if val_a is None and okosc_ws.Cells(r, 5).Value is None:
+    okosc_wb = openpyxl.load_workbook(okosc_path, data_only=True)
+    okosc_ws = okosc_wb.active
+    for row in okosc_ws.iter_rows(min_row=2, values_only=True):
+        n = len(row)
+        val_a = row[0] if n > 0 else None
+        val_e = row[4] if n > 4 else None
+        if val_a is None and val_e is None:
             break
         rows_data.append({
-            "A": okosc_ws.Cells(r, 1).Value,    # K로 갈 값
-            "C": okosc_ws.Cells(r, 3).Value,    # L로 갈 값
-            "D": okosc_ws.Cells(r, 4).Value,    # M으로 갈 값
-            "E": okosc_ws.Cells(r, 5).Value,    # 택배관리 A
-            "F": okosc_ws.Cells(r, 6).Value,    # 택배관리 B
-            "G": okosc_ws.Cells(r, 7).Value,    # 택배관리 C
-            "H": okosc_ws.Cells(r, 8).Value,    # 택배관리 D
-            "I": okosc_ws.Cells(r, 9).Value,    # 택배관리 E
+            "A": row[0] if n > 0 else None,   # K로 갈 값
+            "C": row[2] if n > 2 else None,   # L로 갈 값
+            "D": row[3] if n > 3 else None,   # M으로 갈 값
+            "E": row[4] if n > 4 else None,   # 택배관리 A
+            "F": row[5] if n > 5 else None,   # 택배관리 B
+            "G": row[6] if n > 6 else None,   # 택배관리 C
+            "H": row[7] if n > 7 else None,   # 택배관리 D
+            "I": row[8] if n > 8 else None,   # 택배관리 E
         })
-        r += 1
+    okosc_wb.close()
 
     if not rows_data:
         raise ValueError("통합문서에 데이터가 없습니다.")

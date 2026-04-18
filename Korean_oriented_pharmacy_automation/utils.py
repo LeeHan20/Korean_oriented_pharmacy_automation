@@ -252,26 +252,22 @@ def _get_xl_app_from_xlmain(xlmain_hwnd: int):
 
 def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
     """
-    OKOSC 택배목록 통합문서를 임시 파일로 저장한 뒤 COM 워크북으로 반환합니다.
-    1) COM(_get_xl_app_from_xlmain)으로 SaveAs 시도
-    2) 실패 시 F12 UI 자동화로 저장
-    3) 저장된 파일을 새 Excel 인스턴스로 열어 반환
+    OKOSC 택배목록 통합문서를 F12 UI 자동화로 임시 파일에 저장합니다.
+    OKOSC의 Excel 인스턴스에 COM으로 직접 접근하지 않아 OKOSC 프리징을 방지합니다.
+    반환: 저장된 임시 XLSX 파일 경로 (str)
     """
-    import win32com.client
     import win32gui
     import win32con
-    import pythoncom
+    import win32clipboard
     import pyautogui
 
-    pythoncom.CoInitialize()
-    title_pat = re.compile(r'통합 문서\d+')
-    wb_pat = re.compile(r'^통합 문서(\d+)(\.xlsx?)?$')
-    # 임시 저장 경로 (ASCII, 프로젝트 폴더)
+    title_pat = re.compile(r'통합\s*문서\s*\d+')
     temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_okosc_temp.xlsx")
     abs_temp = os.path.abspath(temp_path)
-    deadline = time.time() + 15
+    deadline = time.time() + 20
+    f12_attempted = False
 
-    while True:
+    while time.time() < deadline:
         # XLMAIN 창 중 "통합 문서N" 타이틀인 것 찾기
         target_hwnd = None
         def _enum(hwnd, _):
@@ -281,83 +277,58 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
                     target_hwnd = hwnd
         win32gui.EnumWindows(_enum, None)
 
-        if target_hwnd:
-            # ── 방법 1: COM으로 SaveCopyAs (OKOSC 워크북 타이틀 유지) ──────
-            app = _get_xl_app_from_xlmain(target_hwnd)
-            if app:
-                try:
-                    for wb in app.Workbooks:
-                        if wb_pat.match(wb.Name):
-                            if os.path.exists(abs_temp):
-                                os.remove(abs_temp)
-                            app.DisplayAlerts = False
-                            wb.SaveCopyAs(abs_temp)   # 복사본만 저장, 원본 이름·상태 유지
-                            app.DisplayAlerts = True
-                            # OKOSC 워크북은 그대로 두고 복사본을 새 인스턴스로 열기
-                            xl2 = win32com.client.Dispatch("Excel.Application")
-                            xl2.Visible = False
-                            xl2.DisplayAlerts = False
-                            return xl2.Workbooks.Open(abs_temp)
-                except Exception:
-                    pass
+        if target_hwnd and not f12_attempted:
+            f12_attempted = True
+            time.sleep(0.8)  # Excel 완전 초기화 대기
 
-            # ── 방법 2: F12 UI 자동화로 저장 ────────────────────────────
+            # 기존 임시 파일 삭제
             try:
                 if os.path.exists(abs_temp):
                     os.remove(abs_temp)
+            except Exception:
+                pass
 
+            # 클립보드에 저장 경로 복사 (pyautogui.write 대신 붙여넣기 → IME 우회)
+            try:
+                win32clipboard.OpenClipboard(0)
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(13, abs_temp)  # CF_UNICODETEXT = 13
+                win32clipboard.CloseClipboard()
+            except Exception:
+                pass
+
+            try:
                 win32gui.ShowWindow(target_hwnd, win32con.SW_RESTORE)
                 win32gui.SetForegroundWindow(target_hwnd)
                 time.sleep(0.5)
 
                 pyautogui.hotkey('f12')          # 다른 이름으로 저장
-                time.sleep(1.5)
+                time.sleep(2.0)                  # 대화상자 열릴 때까지 대기
 
-                # 파일 이름 필드: 전체 선택 후 경로 입력
+                # 파일 이름 필드: 전체 선택 후 클립보드 경로 붙여넣기
                 pyautogui.hotkey('ctrl', 'a')
-                time.sleep(0.1)
-                pyautogui.write(abs_temp, interval=0.02)
+                time.sleep(0.15)
+                pyautogui.hotkey('ctrl', 'v')
+                time.sleep(0.2)
                 pyautogui.press('enter')
-                time.sleep(0.5)
+                time.sleep(1.0)
 
                 # 덮어쓰기·형식 확인 다이얼로그 처리 (Enter로 수락)
-                for _ in range(3):
+                for _ in range(4):
+                    time.sleep(0.5)
                     for dlg_name in ("Microsoft Excel", "Excel"):
                         hw = win32gui.FindWindow(None, dlg_name)
                         if hw and win32gui.IsWindowVisible(hw):
                             pyautogui.press('enter')
-                            time.sleep(0.3)
-
-                # 파일 생성 완료 대기 후 새 COM 인스턴스로 열기
-                fi_deadline = time.time() + 8
-                while time.time() < fi_deadline:
-                    if os.path.exists(abs_temp) and os.path.getsize(abs_temp) > 0:
-                        time.sleep(0.3)   # 쓰기 완료 여유
-                        xl2 = win32com.client.Dispatch("Excel.Application")
-                        xl2.Visible = False
-                        xl2.DisplayAlerts = False
-                        return xl2.Workbooks.Open(abs_temp)
-                    time.sleep(0.3)
+                            time.sleep(0.4)
             except Exception:
                 pass
 
-        # ── 방법 3: GetActiveObject fallback ────────────────────────────
-        try:
-            xl = win32com.client.GetActiveObject("Excel.Application")
-            max_n, target_wb = -1, None
-            for wb in xl.Workbooks:
-                m = wb_pat.match(wb.Name)
-                if m:
-                    n = int(m.group(1))
-                    if n > max_n:
-                        max_n, target_wb = n, wb
-            if target_wb:
-                return target_wb
-        except Exception:
-            pass
+        # 파일 생성 완료 확인
+        if os.path.exists(abs_temp) and os.path.getsize(abs_temp) > 0:
+            time.sleep(0.3)   # 쓰기 완료 여유
+            return abs_temp
 
-        if time.time() >= deadline:
-            break
         time.sleep(0.5)
 
     raise RuntimeError(
