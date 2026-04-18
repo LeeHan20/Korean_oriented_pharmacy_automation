@@ -141,33 +141,35 @@ def step4_upload_to_homepage(driver, csv_path: str):
         driver.switch_to.window(driver.window_handles[-1])
 
     wait = WebDriverWait(driver, config.PAGE_LOAD_TIMEOUT)
-    wait.until(EC.url_contains("rankup_index"))
 
-    # 주문관리 메뉴 클릭 - left(사이드 메뉴) 프레임에 있음
+    # 주문관리 버튼은 left(사이드 메뉴) 프레임에 있음
     wait.until(EC.frame_to_be_available_and_switch_to_it("left"))
-    menu = wait.until(EC.element_to_be_clickable(
-        (By.XPATH, "//*[contains(text(),'주문관리')]")
+    order_management_btn = wait.until(EC.element_to_be_clickable(
+        (By.XPATH, "//a[@href='../../modules/shop/admin/admin_list.html']")
     ))
-    menu.click()
-    time.sleep(0.4)
+    order_management_btn.click()
 
-    # 로젠택배운송장업로드 클릭 (left 프레임 내 서브메뉴)
-    sub = wait.until(EC.element_to_be_clickable(
-        (By.XPATH,
-         "//*[contains(text(),'로젠택배운송장업로드') or "
-         "contains(text(),'운송장업로드') or "
-         "contains(text(),'운송장 업로드')]")
-    ))
-    sub.click()
-
-    # 클릭 후 right 프레임으로 전환
+    # 클릭 후 right 프레임이 주문관리 페이지로 바뀌므로
+    # default_content로 빠져나온 뒤 right 프레임에 진입
     driver.switch_to.default_content()
     wait.until(EC.frame_to_be_available_and_switch_to_it("right"))
 
-    # 파일선택 input
+    # # 로젠택배운송장업로드 클릭 (right 프레임 내 서브메뉴)
+    # sub = wait.until(EC.element_to_be_clickable(
+    #     (By.XPATH,
+    #      "//*[contains(text(),'로젠택배운송장업로드') or "
+    #      "contains(text(),'운송장업로드') or "
+    #      "contains(text(),'운송장 업로드')]")
+    # ))
+    # sub.click()
+
+    # 파일선택 input (name="_attach_" 로 특정)
     file_input = wait.until(EC.presence_of_element_located(
-        (By.XPATH, "//input[@type='file']")
+        (By.XPATH, "//input[@type='file' and @name='_attach_']")
     ))
+
+    print(f"업로드할 CSV 경로: {csv_path}")
+    print(f"파일 input 요소: {file_input}")
     file_input.send_keys(os.path.abspath(csv_path))
     time.sleep(0.5)
 
