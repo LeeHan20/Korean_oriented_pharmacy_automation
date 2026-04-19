@@ -452,6 +452,57 @@ def get_search_dates():
 
 # ─── 인간 검토 다이얼로그 ─────────────────────────────────────────────────────
 
+def human_text_input_dialog(title: str, prompt: str,
+                            ok_text="확인", cancel_text="취소") -> str:
+    """
+    tkinter 텍스트 입력 다이얼로그를 메인 스레드에서 표시합니다.
+    입력 문자열 반환, 취소 시 빈 문자열 반환.
+    """
+    result_holder = [""]
+    event = threading.Event()
+
+    def _show():
+        win = tk.Toplevel()
+        win.title(title)
+        win.grab_set()
+        win.resizable(False, False)
+
+        tk.Label(win, text=prompt, font=("맑은 고딕", 10),
+                 wraplength=400, justify="left", padx=20, pady=(15, 5)).pack()
+
+        entry_var = tk.StringVar()
+        entry = tk.Entry(win, textvariable=entry_var,
+                         font=("맑은 고딕", 10), width=40)
+        entry.pack(padx=20, pady=(0, 10))
+        entry.focus_set()
+
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(pady=(0, 15))
+
+        def on_ok():
+            result_holder[0] = entry_var.get()
+            win.destroy()
+            event.set()
+
+        def on_cancel():
+            result_holder[0] = ""
+            win.destroy()
+            event.set()
+
+        tk.Button(btn_frame, text=ok_text, command=on_ok,
+                  bg="#4CAF50", fg="white",
+                  font=("맑은 고딕", 10, "bold"), padx=15, pady=5).pack(side="left", padx=5)
+        tk.Button(btn_frame, text=cancel_text, command=on_cancel,
+                  font=("맑은 고딕", 10), padx=15, pady=5).pack(side="left", padx=5)
+
+        win.bind("<Return>", lambda _: on_ok())
+        win.protocol("WM_DELETE_WINDOW", on_cancel)
+
+    _ROOT.after(0, _show)
+    event.wait()
+    return result_holder[0]
+
+
 def human_review_dialog(title: str, message: str,
                         ok_text="계속 진행", cancel_text="중단") -> bool:
     """

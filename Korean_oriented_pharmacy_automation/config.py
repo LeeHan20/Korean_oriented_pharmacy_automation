@@ -38,6 +38,16 @@ DELIVERY_F_VALUE = 1         # F열: 수량
 DELIVERY_G_VALUE = "4400"    # G열: 금액
 DELIVERY_H_VALUE = "한약"    # H열: 품목
 
+# ─── 보험한약 파일 설정 ───────────────────────────────────────────────────────
+# 첩약보험약값대장.xlsx 파일 경로 (실제 경로로 수정 필요)
+INSURANCE_WORKBOOK_PATH = r"E:\한약국\첩약시험사업\첩약보험약값대장_테스트사본.xlsx"
+
+# ─── 32비트 Python 경로 ───────────────────────────────────────────────────────
+# OKOSC(32비트 앱) 자동화에 사용. 설치 후 실제 경로로 수정하세요.
+# 예: C:\Python313-32\python.exe  또는
+#     C:\Users\COM\AppData\Local\Programs\Python\Python313-32\python.exe
+PYTHON32_PATH = r"C:\Users\COM\AppData\Local\Programs\Python\Python313-32\python.exe"
+
 # ─── 타임아웃 설정 (초) ──────────────────────────────────────────────────────
 DOWNLOAD_TIMEOUT = 60        # 파일 다운로드 최대 대기 시간
 PAGE_LOAD_TIMEOUT = 30       # 페이지 로딩 최대 대기 시간
