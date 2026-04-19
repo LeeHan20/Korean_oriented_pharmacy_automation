@@ -174,9 +174,7 @@ def step4_upload_to_homepage(driver, csv_path: str):
     file_input = wait.until(EC.presence_of_element_located(
         (By.XPATH, "//input[@type='file' and @name='_attach_']")
     ))
-
-    print(f"업로드할 CSV 경로: {csv_path}")
-    print(f"파일 input 요소: {file_input}")
+    
     file_input.send_keys(os.path.abspath(csv_path))
     time.sleep(0.5)
 
@@ -198,7 +196,7 @@ def step5_click_confirm(driver):
          "//a[contains(text(),'저장하기')]")
     ))
 
-    print(f"버튼이 뭐다? : {confirm_btn}")
+    print(f"버튼이 뭐다? : {confirm_btn}, 그리고! {confirm_btn.text}")
     # confirm_btn.click()
     driver.switch_to.default_content()
 

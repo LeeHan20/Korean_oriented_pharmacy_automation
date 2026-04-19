@@ -376,11 +376,16 @@ def step13_16_upload_rosen(driver, xlsx_path: str):
 
     wait = WebDriverWait(driver, config.PAGE_LOAD_TIMEOUT)
 
-    # 예약관리 메뉴 클릭
+    # 예약관리 메뉴 (사이드바 - 메인 페이지에 있음)
     menu = wait.until(EC.element_to_be_clickable(
         (By.XPATH, "//*[contains(text(),'예약관리')]")
     ))
-    menu.click()
+
+    parent = menu.find_element(By.XPATH, "ancestor::*[contains(@class,'toggle-menu')]")
+    classes = parent.get_attribute("class")
+
+    if "opened" not in classes:
+        menu.click()
     time.sleep(0.4)
 
     # 주문등록/출력(복수건) 클릭
@@ -390,14 +395,52 @@ def step13_16_upload_rosen(driver, xlsx_path: str):
          "//*[contains(text(),'복수건')]")
     ))
     sub.click()
-    time.sleep(1)
+    time.sleep(1.5)
 
-    # 파일 업로드 input 찾기
-    file_input = wait.until(EC.presence_of_element_located(
-        (By.XPATH, "//input[@type='file']")
+    # ── 콘텐츠 iframe 으로 전환 ─────────────────────────────────────────────
+    # lrm01f0040.html 은 메인 페이지의 <iframe> 안에 로드된다.
+    # src 에 'lrm01f0040' 가 포함된 iframe을 찾아 전환.
+    driver.switch_to.default_content()
+    content_iframe = wait.until(EC.presence_of_element_located(
+        (By.XPATH, "//iframe[contains(@src,'lrm01f0040')]")
     ))
-    file_input.send_keys(os.path.abspath(xlsx_path))
-    time.sleep(0.5)
+    driver.switch_to.frame(content_iframe)
+
+    # ── 파일 업로드 ────────────────────────────────────────────────────────────
+    # IBSheet.loadExcel()은 내부적으로 #tempFile.click() 으로 OS 파일 다이얼로그를
+    # 열기 때문에 Selenium이 직접 제어할 수 없다.
+    # 해결책: 버튼 클릭 전에 file input 의 click()을 JS로 억제 →
+    #   fn_openFile() 유효성 검사 통과 + IBSheet 내부 상태/이벤트 설정 완료 →
+    #   OS 다이얼로그 없이 #tempFile 에 직접 send_keys.
+
+    # file input 의 .click() 억제 (OS 다이얼로그 방지)
+    driver.execute_script("""
+        window._origInputClick = HTMLInputElement.prototype.click;
+        window._fileClickSuppressed = false;
+        HTMLInputElement.prototype.click = function() {
+            if (this.type === 'file') {
+                window._fileClickSuppressed = true;
+                return;
+            }
+            window._origInputClick.call(this);
+        };
+    """)
+
+    # fn_openFile 버튼 클릭 → IBSheet.loadExcel() 실행 (click 억제됨)
+    upload_btn = wait.until(EC.element_to_be_clickable((By.ID, "btnOpenfile")))
+    upload_btn.click()
+    time.sleep(0.6)
+
+    # click() 복원
+    driver.execute_script("HTMLInputElement.prototype.click = window._origInputClick;")
+
+    # #tempFile 에 직접 파일 경로 전송 → IBSheet change 이벤트 발동
+    temp_file = wait.until(EC.presence_of_element_located((By.ID, "tempFile")))
+    driver.execute_script("arguments[0].style.display = 'block';", temp_file)
+    temp_file.send_keys(os.path.abspath(xlsx_path))
+    time.sleep(1.0)
+
+    driver.switch_to.default_content()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
