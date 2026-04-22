@@ -117,7 +117,6 @@ def step3_remove_first_row(xlsx_path: str):
     ws = wb.active
     ws.delete_rows(1)
     wb.save(xlsx_path)
-    wb.close()
 
 
 def step4_clean_column_g(xlsx_path: str):
@@ -129,7 +128,6 @@ def step4_clean_column_g(xlsx_path: str):
         if cell.value and "즉납" in str(cell.value):
             cell.value = config.DELIVERY_G_VALUE
     wb.save(xlsx_path)
-    wb.close()
 
 
 def step5_automate_okosc() -> object:
@@ -258,7 +256,6 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
             "H": row[7] if n > 7 else None,   # 택배관리 D
             "I": row[8] if n > 8 else None,   # 택배관리 E
         })
-    okosc_wb.close()
 
     if not rows_data:
         raise ValueError("통합문서에 데이터가 없습니다.")
@@ -287,7 +284,6 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
 
     new_end = new_start + len(rows_data) - 1
     wb.save(xlsx_path)
-    wb.close()
     return new_start, new_end
 
 
@@ -300,24 +296,22 @@ def step9_normalize_id_columns(xlsx_path: str, start_row: int, end_row: int):
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
 
-    for row in range(start_row, end_row + 1):
+    for row in range(1, end_row + 1):
         d_val = ws.cell(row=row, column=4).value
         e_val = ws.cell(row=row, column=5).value
 
         d_has = d_val not in (None, "")
         e_has = e_val not in (None, "")
 
-        if d_has and e_has:
-            # 둘 다 있으면 그대로
-            pass
-        elif e_has and not d_has:
+        if d_val == "000-0000-0000" or (e_has and not d_has):
             # E만 있으면 D로 이동
             ws.cell(row=row, column=4).value = e_val
             ws.cell(row=row, column=5).value = None
-        # D만 있거나 둘 다 없으면 변경 없음
+        elif d_has and e_has:
+            # 둘 다 있으면 그대로
+            pass
 
     wb.save(xlsx_path)
-    wb.close()
 
 
 def step10_11_paste_iksan_data(xlsx_path: str):
@@ -351,7 +345,69 @@ def step10_11_paste_iksan_data(xlsx_path: str):
         ws.cell(row=r, column=8).value = config.DELIVERY_H_VALUE   # H
 
     wb.save(xlsx_path)
-    wb.close()
+    os.startfile(xlsx_path)  # 편의를 위해 저장 후 열기
+
+def step_highlight_checks(xlsx_path: str):
+    """
+    택배관리 파일 전체 데이터 행을 스캔하여 연한 녹색으로 표시:
+    - A~E열: 동일 값이 2개 이상인 셀 모두 하이라이트
+    - F열 ≠ 1, G열 ≠ 4400, H열 ≠ '한약' 인 셀 하이라이트
+    """
+    from openpyxl.styles import PatternFill
+
+    LIGHT_GREEN = PatternFill(fill_type="solid", fgColor="CCFFCC")
+
+    wb = openpyxl.load_workbook(xlsx_path)
+    ws = wb.active
+
+    last_row = utils.get_last_data_row(ws, check_cols=(1, 2, 3, 4, 5))
+    if last_row < 2:
+        wb.save(xlsx_path)
+        return
+
+    # ── A~E 중복값 하이라이트 ──────────────────────────────────────────────
+    for i in range(1, 6):
+        for j in range(1, last_row + 1):
+            val = ws.cell(row = j, column = i).value
+            if val == None or val == '':
+                continue
+
+            for k in range(j + 1, last_row + 1):
+                temp = ws.cell(row = k, column = i).value
+                if temp == None or temp == '' or val != temp:
+                    continue
+                ws.cell(row = j, column = i).fill = LIGHT_GREEN
+                ws.cell(row = k, column = i).fill = LIGHT_GREEN
+            
+        
+    # ── F~H 비정상값 하이라이트 ───────────────────────────────────────────────
+    for row in range(1, last_row + 1):
+        f_val = ws.cell(row=row, column=6).value
+        g_val = ws.cell(row=row, column=7).value
+        h_val = ws.cell(row=row, column=8).value
+
+        # F열: 1이 아닌 경우 (None 포함)
+        try:
+            f_ok = int(f_val) == 1
+        except (TypeError, ValueError):
+            f_ok = False
+        if not f_ok:
+            ws.cell(row=row, column=6).fill = LIGHT_GREEN
+
+        # G열: 4400이 아닌 경우 (숫자 또는 문자열 모두 비교)
+        try:
+            g_ok = str(g_val).strip() == "4400"
+        except (TypeError, ValueError):
+            g_ok = False
+        if not g_ok:
+            ws.cell(row=row, column=7).fill = LIGHT_GREEN
+
+        # H열: '한약'이 아닌 경우
+        h_ok = str(h_val).strip() == "한약" if h_val is not None else False
+        if not h_ok:
+            ws.cell(row=row, column=8).fill = LIGHT_GREEN
+
+    wb.save(xlsx_path)
 
 
 def step13_16_upload_rosen(driver, xlsx_path: str):
@@ -586,6 +642,11 @@ class Auto1App:
             # 10-11. 익산대장
             self._log_msg("10~11단계: 익산대장 데이터 추가 중...")
             step10_11_paste_iksan_data(xlsx_path)
+            self._log_msg("  ✓ 완료")
+
+            # 하이라이트 검토
+            self._log_msg("중복/비정상 셀 하이라이트 중...")
+            step_highlight_checks(xlsx_path)
             self._log_msg("  ✓ 완료")
 
             # 12. 사람 검토

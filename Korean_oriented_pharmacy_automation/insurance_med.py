@@ -101,7 +101,6 @@ def _unprotect_sheet(wb_path: str, sheet_name: str):
         if ws.ProtectContents:
             ws.Unprotect()
         wb.Save()
-        wb.Close(False)
     finally:
         if xl:
             try:
@@ -126,7 +125,6 @@ def _protect_sheet(wb_path: str, sheet_name: str):
         ws = wb.Worksheets(sheet_name)
         ws.Protect()
         wb.Save()
-        wb.Close(False)
     finally:
         if xl:
             try:
@@ -277,7 +275,6 @@ def step2_fill_price_sheet(wb_path: str, search_dlg, log_fn=None) -> list:
             ws.cell(row=r, column=2).value = name   # B열
             ws.cell(row=r, column=3).value = dose   # C열
         wb.save(wb_path)
-        wb.close()
         log(f"  가격표 B/C열 {len(herbs)}행 기입 완료 (12~{11 + len(herbs)}행)")
     finally:
         _protect_sheet(wb_path, SHEET_PRICE)
@@ -305,7 +302,6 @@ def step3_check_origin(wb_path: str, herbs: list, log_fn=None) -> bool:
             if ws.cell(row=r, column=col).value in (None, ""):
                 missing_rows.append(r)
                 break
-    wb.close()
 
     if not missing_rows:
         log("  원산지 확인: 공란 없음")
@@ -354,7 +350,6 @@ def step4_fill_patient_info(wb_path: str, search_dlg, log_fn=None):
         ws["O7"] = contact
         ws["O5"] = address
         wb.save(wb_path)
-        wb.close()
         log("  환자 정보 입력 완료 (O5/O6/O7)")
     finally:
         _protect_sheet(wb_path, SHEET_PRICE)
@@ -482,7 +477,6 @@ def step6_extract_prescription_info(wb_path: str, presc_win, log_fn=None) -> dic
         ws["O10"] = fields["발급연월일"]
         ws["P10"] = fields["발급번호"]
         wb.save(wb_path)
-        wb.close()
         log("  처방전 정보 가격표 입력 완료")
     finally:
         _protect_sheet(wb_path, SHEET_PRICE)
@@ -572,7 +566,6 @@ def step8_select_disease_code(wb_path: str, presc_win, log_fn=None):
         ws = wb[SHEET_PRICE]
         ws["F5"] = disease_code
         wb.save(wb_path)
-        wb.close()
         log(f"  F5 질병분류기호 입력 완료: {disease_code}")
     finally:
         _protect_sheet(wb_path, SHEET_PRICE)
@@ -637,7 +630,6 @@ def step10_fill_dosage_info(wb_path: str, presc_win, log_fn=None):
         ws["T9"]  = pack_text
         ws["T10"] = usage_text
         wb.save(wb_path)
-        wb.close()
         log("  T9/T10 입력 완료")
     finally:
         _protect_sheet(wb_path, SHEET_PRICE)
@@ -668,7 +660,6 @@ def step11_fill_okosc_dosage(wb_path: str, search_dlg, log_fn=None):
         ws = wb[SHEET_PRICE]
         ws["T11"] = dosage_text
         wb.save(wb_path)
-        wb.close()
         log("  T11 입력 완료")
     finally:
         _protect_sheet(wb_path, SHEET_PRICE)
@@ -740,7 +731,6 @@ def step12_14_fill_herb_details(wb_path: str, presc_win, log_fn=None) -> list:
             ws.cell(row=r, column=YY_TOTAL_COL).value = total     # AA열
             ws.cell(row=r, column=YY_ADD_COL).value   = addition  # AF열
         wb.save(wb_path)
-        wb.close()
         log("  요양급여비용명세서_양식 U/Y/Z/AA/AF열 입력 완료")
     finally:
         _protect_sheet(wb_path, SHEET_YOYANG)
@@ -762,7 +752,6 @@ def step15_16_fill_code_and_price(wb_path: str, herb_details: list, log_fn=None)
     wb_price = openpyxl.load_workbook(wb_path, data_only=True)
     price_ws = wb_price[SHEET_PRICE]
     herb_lookup = _build_herb_lookup(price_ws)
-    wb_price.close()
 
     if not herb_lookup:
         log("  경고: 가격표에서 한약재 조회 테이블 구성 실패")
@@ -789,7 +778,6 @@ def step15_16_fill_code_and_price(wb_path: str, herb_details: list, log_fn=None)
             else:
                 log(f"  경고: '{herb_name}' 가격표에 없음")
         wb.save(wb_path)
-        wb.close()
         log(f"  제품코드/단가 입력 완료: {matched}/{len(herb_details)}건")
     finally:
         _protect_sheet(wb_path, SHEET_YOYANG)
@@ -830,7 +818,6 @@ def step18_copy_yoyang_and_print(wb_path: str, log_fn=None):
                     dst_ws.cell(row=row, column=dst_col).value = val
 
         wb.save(wb_path)
-        wb.close()
         log(f"  요양급여명세서모음2 {start_col}열부터 붙여넣기 완료")
     finally:
         _protect_sheet(wb_path, SHEET_YOYANG_COL)
@@ -844,7 +831,6 @@ def step18_copy_yoyang_and_print(wb_path: str, log_fn=None):
     # xl.Visible = False
     # wb = xl.Workbooks.Open(os.path.abspath(wb_path))
     # wb.Worksheets(SHEET_YOYANG).PrintOut()
-    # wb.Close(False)
     # xl.Quit()
     # pythoncom.CoUninitialize()
 
@@ -882,7 +868,6 @@ def step19_copy_joje(wb_path: str, log_fn=None):
                     dst_ws.cell(row=row, column=dst_col).value = val
 
         wb.save(wb_path)
-        wb.close()
         log(f"  조제내역안내서양식_모음 {start_col}열부터 붙여넣기 완료")
     finally:
         _protect_sheet(wb_path, SHEET_JOJE_COL)
@@ -920,7 +905,6 @@ def step20_copy_receipt(wb_path: str, log_fn=None):
                     dst_ws.cell(row=r, column=col).value = val
 
         wb.save(wb_path)
-        wb.close()
         log(f"  약재비_영수증_모음 {start_row}행부터 붙여넣기 완료")
     finally:
         _protect_sheet(wb_path, SHEET_RECEIPT_COL)

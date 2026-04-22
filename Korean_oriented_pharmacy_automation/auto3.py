@@ -70,8 +70,6 @@ def step1_build_tracking_map() -> dict:
             tracking_no = max(nums, key=len)   # 가장 긴 숫자열 선택
             tracking_map[name] = f"로젠 {tracking_no}"
 
-    wb.close()
-
     if not tracking_map:
         raise ValueError(
             "주문등록 파일에서 운송장번호를 찾을 수 없습니다.\n"

@@ -124,7 +124,6 @@ def step3_excel_to_csv(excel_path: str) -> str:
         for row in ws.iter_rows():
             writer.writerow([_cell_to_str(cell) for cell in row])
 
-    wb.close()
     return csv_path
 
 

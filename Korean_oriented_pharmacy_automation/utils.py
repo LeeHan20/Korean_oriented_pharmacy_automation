@@ -373,7 +373,7 @@ def get_iksan_green_cells(iksan_path: str) -> list:
     results = []
     xl = None
     try:
-        xl = win32com.client.Dispatch("Excel.Application")
+        xl = win32com.client.DispatchEx("Excel.Application")
         xl.Visible = False
         xl.DisplayAlerts = False
         wb_com = xl.Workbooks.Open(os.path.abspath(iksan_path))
@@ -398,9 +398,16 @@ def get_iksan_green_cells(iksan_path: str) -> list:
             phone = m.group()
             addr = text[m.end():].strip().lstrip(',').strip()
             if name:
+                print("row:", row)
+                print("value repr:", repr(val))
+                print("text repr:", repr(text))
+                print("color:", cell.Interior.Color)
+                print("name:", repr(name))
+                print("phone:", repr(phone))
+                print("addr:", repr(addr))
+                print("-" * 50)
                 results.append((name, phone, addr))
 
-        wb_com.Close(False)
     finally:
         if xl:
             try:
@@ -517,6 +524,10 @@ def human_review_dialog(title: str, message: str,
         win.title(title)
         win.grab_set()
         win.resizable(False, False)
+
+        win.attributes('-topmost', True)   # 항상 위
+        win.lift()                         # 위로 끌어올림
+        win.focus_force()                  # 포커스 강제
 
         tk.Label(win, text=message, font=("맑은 고딕", 10),
                  wraplength=400, justify="left", padx=20, pady=20).pack()
