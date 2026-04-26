@@ -250,11 +250,11 @@ def _get_xl_app_from_xlmain(xlmain_hwnd: int):
         return None
 
 
-def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
+def get_okosc_workbook():
     """
-    OKOSC 택배목록 통합문서를 F12 UI 자동화로 임시 파일에 저장합니다.
-    OKOSC의 Excel 인스턴스에 COM으로 직접 접근하지 않아 OKOSC 프리징을 방지합니다.
-    반환: 저장된 임시 XLSX 파일 경로 (str)
+    열린 '통합 문서N' Excel 창을 F12로 자동화 레포 폴더에 저장합니다.
+    파일명은 창 제목 그대로 사용하며, 같은 이름의 파일이 있으면 덮어씁니다.
+    반환: 저장된 XLSX 파일 경로 (str)
     """
     import win32gui
     import win32con
@@ -262,19 +262,95 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
     import pyautogui
 
     title_pat = re.compile(r'통합\s*문서\s*\d+')
-    temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_okosc_temp.xlsx")
-    abs_temp = os.path.abspath(temp_path)
-    deadline = time.time() + 30
-    last_f12_attempt = 0.0  # 마지막 F12 시도 시각 (0이면 미시도)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    deadline = time.time() + 20
 
-    def _dismiss_dialogs(target_hwnd):
-        """
-        덮어쓰기·형식 확인 다이얼로그를 닫습니다.
-        1) 타이틀 직접 검색
-        2) #32770 클래스 기반 전수 검색 (한국어 Excel 대응)
-        """
-        dismissed = False
-        # ── 방법 1: 타이틀 직접 매칭 ───────────────────────────────────────
+    # ── 기존 파일 미리 삭제 (덮어쓰기 다이얼로그 방지) ─────────────────────
+    integrated_path = r"C:\Users\COM\Desktop\automation\Korean_oriented_pharmacy_automation\통합 문서1.xlsx"
+    try:
+        if os.path.exists(integrated_path):
+            os.remove(integrated_path)
+    except Exception:
+        pass
+
+    # ── XLMAIN "통합 문서N" 창 찾기 ──────────────────────────────────────────
+    target_hwnd = None
+    target_title = None
+    while time.time() < deadline:
+        def _enum(hwnd, _):
+            nonlocal target_hwnd, target_title
+            if win32gui.GetClassName(hwnd) == "XLMAIN":
+                t = win32gui.GetWindowText(hwnd)
+                if title_pat.search(t):
+                    target_hwnd = hwnd
+                    target_title = t
+        win32gui.EnumWindows(_enum, None)
+        if target_hwnd:
+            break
+        time.sleep(0.5)
+
+    if not target_hwnd:
+        raise RuntimeError(
+            "'통합 문서 N' 형식의 Excel 창을 찾을 수 없습니다.\n"
+            "OKOSC에서 택배목록을 먼저 열어주세요."
+        )
+
+    # ── OKOSC가 Excel에 데이터를 다 쓸 때까지 대기 ──────────────────────────
+    # fc_DataTable2EXCEL_1이 COM으로 행을 채우는 중에 F12를 누르면
+    # RPC_E_CALL_REJECTED 에러가 나고 데이터도 잘립니다.
+    # 창 제목이 일정 시간 동안 변하지 않으면 쓰기 완료로 판단합니다.
+    stable_deadline = time.time() + 30
+    prev_title = target_title
+    stable_count = 0
+    while time.time() < stable_deadline:
+        time.sleep(0.5)
+        cur_title = win32gui.GetWindowText(target_hwnd)
+        if cur_title == prev_title:
+            stable_count += 1
+            if stable_count >= 6:   # 3초간 제목 변화 없음 → 안정화 완료
+                target_title = cur_title
+                break
+        else:
+            prev_title = cur_title
+            stable_count = 0
+
+    # ── 창 제목에서 워크북명 추출 → 저장 경로 결정 ──────────────────────────
+    # 예: "통합 문서1 - Microsoft Excel"  →  "통합 문서1"
+    wb_name = re.sub(r'\s*[-–]\s*(Microsoft\s*)?Excel.*$', '', target_title,
+                     flags=re.IGNORECASE).strip()
+    if not wb_name.lower().endswith('.xlsx'):
+        wb_name += '.xlsx'
+    abs_save = os.path.join(script_dir, wb_name)
+
+    # ── 클립보드에 저장 전체 경로 세팅 (IME 우회) ───────────────────────────
+    try:
+        win32clipboard.OpenClipboard(0)
+        win32clipboard.EmptyClipboard()
+        win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, abs_save)
+        win32clipboard.CloseClipboard()
+    except Exception:
+        pass
+
+    # ── Excel 창 포커스 → F12 (다른 이름으로 저장) ──────────────────────────
+    win32gui.ShowWindow(target_hwnd, win32con.SW_RESTORE)
+    win32gui.SetForegroundWindow(target_hwnd)
+    time.sleep(0.5)
+
+    pyautogui.hotkey('f12')
+    time.sleep(2.5)          # 대화상자 열릴 때까지 대기
+
+    # 파일 이름 필드 전체 선택 후 전체 경로 붙여넣기
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    pyautogui.hotkey('ctrl', 'v')
+    time.sleep(0.3)
+    pyautogui.press('enter')
+    time.sleep(1.5)
+
+    # ── 덮어쓰기·형식 확인 다이얼로그 처리 ─────────────────────────────────
+    for _ in range(8):
+        time.sleep(0.5)
+        # 방법 1: 타이틀 직접 매칭
         for dlg_name in ("Microsoft Excel", "Excel"):
             hw = win32gui.FindWindow(None, dlg_name)
             if hw and win32gui.IsWindowVisible(hw):
@@ -284,99 +360,31 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
                     pass
                 pyautogui.press('enter')
                 time.sleep(0.3)
-                dismissed = True
-
-        # ── 방법 2: #32770 클래스 기반 (표준 Windows 다이얼로그) ───────────
-        found_dialogs = []
+        # 방법 2: #32770 클래스 기반 (한국어 Excel 팝업 대응)
+        found = []
         def _cb(hwnd, _):
             if (win32gui.GetClassName(hwnd) == '#32770'
                     and win32gui.IsWindowVisible(hwnd)
                     and hwnd != target_hwnd):
-                found_dialogs.append(hwnd)
+                found.append(hwnd)
         win32gui.EnumWindows(_cb, None)
-        for hw in found_dialogs:
+        for hw in found:
             try:
                 win32gui.SetForegroundWindow(hw)
             except Exception:
                 pass
             pyautogui.press('enter')
             time.sleep(0.3)
-            dismissed = True
 
-        return dismissed
-
-    while time.time() < deadline:
-        # XLMAIN 창 중 "통합 문서N" 타이틀인 것 찾기
-        target_hwnd = None
-        def _enum(hwnd, _):
-            nonlocal target_hwnd
-            if win32gui.GetClassName(hwnd) == "XLMAIN":
-                if title_pat.search(win32gui.GetWindowText(hwnd)):
-                    target_hwnd = hwnd
-        win32gui.EnumWindows(_enum, None)
-
-        # F12 시도: 아직 한 번도 안 했거나, 10초 지나도 파일이 없으면 재시도
-        should_f12 = (target_hwnd is not None) and (
-            last_f12_attempt == 0.0
-            or (time.time() - last_f12_attempt > 10.0
-                and not (os.path.exists(abs_temp) and os.path.getsize(abs_temp) > 0))
-        )
-
-        if should_f12:
-            last_f12_attempt = time.time()
-            time.sleep(0.8)  # Excel 완전 초기화 대기
-
-            # 기존 임시 파일 삭제
-            try:
-                if os.path.exists(abs_temp):
-                    os.remove(abs_temp)
-            except Exception:
-                pass
-
-            # 클립보드에 저장 경로 복사 (pyautogui.write 대신 붙여넣기 → IME 우회)
-            try:
-                win32clipboard.OpenClipboard(0)
-                win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, abs_temp)
-                win32clipboard.CloseClipboard()
-            except Exception:
-                pass
-
-            try:
-                win32gui.ShowWindow(target_hwnd, win32con.SW_RESTORE)
-                win32gui.SetForegroundWindow(target_hwnd)
-                time.sleep(0.5)
-
-                pyautogui.hotkey('f12')          # 다른 이름으로 저장
-                time.sleep(2.5)                  # 대화상자 열릴 때까지 대기
-
-                # 파일 이름 필드: 전체 선택 후 클립보드 경로 붙여넣기
-                pyautogui.hotkey('ctrl', 'a')
-                time.sleep(0.2)
-                pyautogui.hotkey('ctrl', 'v')
-                time.sleep(0.3)
-                pyautogui.press('enter')
-                time.sleep(1.5)
-
-                # 덮어쓰기·형식 확인 다이얼로그 처리 (Enter로 수락)
-                for _ in range(8):
-                    time.sleep(0.5)
-                    _dismiss_dialogs(target_hwnd)
-
-            except Exception:
-                pass
-
-        # 파일 생성 완료 확인
-        if os.path.exists(abs_temp) and os.path.getsize(abs_temp) > 0:
-            time.sleep(0.3)   # 쓰기 완료 여유
-            return abs_temp
-
+    # ── 파일 생성 완료 대기 ──────────────────────────────────────────────────
+    file_deadline = time.time() + 15
+    while time.time() < file_deadline:
+        if os.path.exists(abs_save) and os.path.getsize(abs_save) > 0:
+            time.sleep(0.3)
+            return abs_save
         time.sleep(0.5)
 
-    raise RuntimeError(
-        "'통합 문서 N' 형식의 Excel 창을 찾을 수 없습니다.\n"
-        "OKOSC에서 택배목록을 먼저 열어주세요."
-    )
+    raise RuntimeError(f"파일 저장 실패: {abs_save}")
 
 
 def list_excel_workbook_names() -> set:

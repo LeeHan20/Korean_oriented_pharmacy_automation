@@ -130,10 +130,10 @@ def step4_clean_column_g(xlsx_path: str):
     wb.save(xlsx_path)
 
 
-def step5_automate_okosc() -> object:
+def step5_automate_okosc() -> str:
     """
     OKOSC에서 날짜 범위 설정 → 검색 → 택배목록 클릭.
-    반환: '통합 문서 N' win32com 워크북 객체
+    반환: 자동화 레포 폴더에 저장된 XLSX 파일 경로 (str)
     """
     import pyautogui
     import psutil
@@ -236,7 +236,7 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
     - 새 행 F=1, G=4400, H=한약
     반환: (새 데이터 시작 행, 새 데이터 끝 행)
     """
-    # ── 통합문서에서 데이터 읽기 (openpyxl - COM 사용 안 함) ─────────────────
+    # ── 통합문서에서 데이터 읽기 (openpyxl) ──────────────────────────────────
     rows_data = []
     okosc_wb = openpyxl.load_workbook(okosc_path, data_only=True)
     okosc_ws = okosc_wb.active
