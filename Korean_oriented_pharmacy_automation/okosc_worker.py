@@ -382,10 +382,19 @@ def cmd_enter_delivery_memos():
         from pywinauto import Application as _App
         memo_dlg = _App(backend="uia").connect(handle=dlg_hwnd).window(handle=dlg_hwnd)
 
-        # Edit 순서: [0]처방메모(읽기전용) [1]기타메모 [2]배송메모 [3]탕전실메모
+        # auto_id로 직접 배송메모 필드 탐색 (ulTxtMemoBesong)
         try:
             edits = memo_dlg.descendants(control_type="Edit")
-            field = edits[2] if len(edits) > 2 else (edits[-1] if edits else None)
+            field = None
+            for ed in edits:
+                if ed.element_info.automation_id == "ulTxtMemoBesong":
+                    field = ed
+                    break
+            # EmbeddableTextBox(실제 입력 자식)가 있으면 그쪽으로
+            if field is not None:
+                children = field.children(control_type="Edit")
+                if children:
+                    field = children[0]
         except Exception:
             field = None
 
@@ -404,14 +413,20 @@ def cmd_enter_delivery_memos():
         field.set_text(tracking_str)
         time.sleep(0.2)
 
-        # 저장 버튼: 기타/배송/탕전실 순서 → index 1이 배송메모 저장
+        # 저장 버튼: auto_id에 "Besong" 포함된 버튼 우선, 없으면 index 1
         try:
-            save_btns = [b for b in memo_dlg.descendants(control_type="Button")
-                         if b.window_text().strip() == "저장"]
-            if len(save_btns) > 1:
-                save_btns[1].click_input()
-            elif save_btns:
-                save_btns[0].click_input()
+            all_btns = memo_dlg.descendants(control_type="Button")
+            save_btn = None
+            for b in all_btns:
+                aid_b = b.element_info.automation_id
+                if "Besong" in aid_b and b.window_text().strip() == "저장":
+                    save_btn = b
+                    break
+            if save_btn is None:
+                save_btns = [b for b in all_btns if b.window_text().strip() == "저장"]
+                save_btn = save_btns[1] if len(save_btns) > 1 else (save_btns[0] if save_btns else None)
+            if save_btn:
+                save_btn.click_input()
         except Exception as e:
             results.append({"presc_no": presc_no, "status": "error",
                              "error": f"저장 버튼 클릭 실패: {e}"})
@@ -485,6 +500,145 @@ def cmd_get_presc_numbers():
     return {"status": "ok", "items": items_data}
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  check_and_complete: 체크박스 선택 후 상태변경→완료상태 (auto3.py step4)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def cmd_check_and_complete():
+    """
+    argv[2]: {"presc_nos": ["8295", ...]} JSON 파일 경로
+    1) 스크린샷 그리드에서 해당 처방번호 행의 체크박스 클릭 (선택)
+    2) 상태변경 버튼 클릭 → 완료상태 뮩뉴 클릭
+    """
+    import collections
+    import json
+    import pyautogui
+    from pywinauto.keyboard import send_keys
+
+    if len(sys.argv) < 3:
+        return {"status": "error", "message": "presc_nos JSON 파일 경로 필요 (argv[2])"}
+
+    with open(sys.argv[2], 'r', encoding='utf-8') as f:
+        presc_nos_set = set(json.load(f).get("presc_nos", []))
+
+    if not presc_nos_set:
+        return {"status": "error", "message": "presc_nos가 비어 있습니다"}
+
+    win = _okosc_win()
+    _row_re = _re.compile(r'\s+Row(\d+)$')
+
+    all_items = win.descendants(control_type="DataItem")
+    rows_dict = collections.defaultdict(dict)  # {row_idx: {col_name: item}}
+    for item in all_items:
+        name = item.element_info.name
+        m = _row_re.search(name)
+        if not m:
+            continue
+        row_idx = int(m.group(1))
+        col_name = name[:m.start()]
+        try:
+            val = item.iface_value.CurrentValue or ""
+        except Exception:
+            val = ""
+        rows_dict[row_idx][col_name] = {"val": val, "item": item}
+
+    checked_count = 0
+    not_found = []
+
+    for row_idx in sorted(rows_dict.keys()):
+        row = rows_dict[row_idx]
+        presc_no = row.get("처방번호", {}).get("val", "").strip()
+        if not presc_no:
+            continue
+        if presc_no not in presc_nos_set:
+            continue
+
+        # 체크박스 셀 탐색: Toggle 인터페이스 지원 항목 우선
+        toggled = False
+        for col_name, cell in row.items():
+            item = cell["item"]
+            try:
+                state = item.iface_toggle.CurrentToggleState
+                if state == 0:  # off → on
+                    item.iface_toggle.Toggle()
+                toggled = True
+                break
+            except Exception:
+                pass
+
+        if not toggled:
+            # fallback: 좌측 기준 두 번째 셀(체크박스 열)
+            items_in_row = sorted(row.values(), key=lambda c: c["item"].rectangle().left)
+            if len(items_in_row) > 1:
+                cb_item = items_in_row[1]["item"]
+                cb_item.click_input()
+                toggled = True
+
+        if toggled:
+            checked_count += 1
+        else:
+            not_found.append(presc_no)
+
+        time.sleep(0.1)
+
+    if checked_count == 0:
+        return {"status": "error", "message": "체크할 항목을 찾을 수 없습니다", "not_found": not_found}
+
+    time.sleep(0.3)
+    win.set_focus()
+
+    # 상태변경 버튼 클릭
+    try:
+        win.child_window(title="상태변경", control_type="Button").click_input()
+    except Exception:
+        try:
+            win.child_window(auto_id="ulBtnChgState").click_input()
+        except Exception:
+            # 마지막 fallback: 첣아서 클릭
+            for ctrl in win.descendants(control_type="Button"):
+                if "상태변경" in ctrl.window_text():
+                    ctrl.click_input()
+                    break
+    time.sleep(0.5)
+
+    # 완료상태 메뉴 항목 클릭
+    from pywinauto import Desktop as _Desktop
+    clicked_complete = False
+    # 메뉴가 팝업되면 MenuItem 또는 Button으로 나탈 수 있음
+    for ctrl_type in ("MenuItem", "ListItem", "Button"):
+        try:
+            items = _Desktop(backend="uia").windows()
+            for w in items:
+                for ci in w.descendants(control_type=ctrl_type):
+                    if "완료" in ci.window_text() and "상태" in ci.window_text():
+                        ci.click_input()
+                        clicked_complete = True
+                        break
+                if clicked_complete:
+                    break
+            if clicked_complete:
+                break
+        except Exception:
+            pass
+
+    if not clicked_complete:
+        # fallback: win 안에서 메뉴 항목 탐색
+        try:
+            win.child_window(title_re=".*완료.*상태.*|.*상태.*완료.*").click_input()
+            clicked_complete = True
+        except Exception:
+            pass
+
+    time.sleep(0.5)
+
+    return {
+        "status": "ok",
+        "checked": checked_count,
+        "not_found": not_found,
+        "complete_clicked": clicked_complete,
+    }
+
+
 COMMANDS = {
     "step1":                cmd_step1,
     "get_herbs":            cmd_get_herbs,
@@ -492,6 +646,7 @@ COMMANDS = {
     "get_dosage":           cmd_get_dosage,
     "enter_delivery_memos": cmd_enter_delivery_memos,
     "get_presc_numbers":    cmd_get_presc_numbers,
+    "check_and_complete":   cmd_check_and_complete,
 }
 
 if __name__ == "__main__":

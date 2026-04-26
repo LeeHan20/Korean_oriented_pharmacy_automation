@@ -118,6 +118,49 @@ def step1_build_tracking_map() -> tuple:
     return tracking_map, excel_path
 
 
+def step4_set_complete_status(tracking_map: dict, log_fn=None):
+    """
+    OKOSC 그리드에서 tracking_map의 처방번호에 해당하는 행들의
+    체크박스를 선택한 후 상태변경 → 완료상태 로 변경합니다.
+    """
+    import json
+    import tempfile
+
+    def log(msg):
+        if log_fn:
+            log_fn(msg)
+
+    presc_nos = list(tracking_map.keys())
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                     suffix='.json', delete=False) as f:
+        json.dump({"presc_nos": presc_nos}, f, ensure_ascii=False)
+        json_path = f.name
+
+    log(f"  완료 상태변경: {presc_nos} ({len(presc_nos)}건)")
+    try:
+        result = utils.call_okosc_worker(
+            "check_and_complete",
+            extra_args=[json_path],
+            timeout=60,
+        )
+    finally:
+        try:
+            os.remove(json_path)
+        except Exception:
+            pass
+
+    if result.get("status") != "ok":
+        raise RuntimeError(f"상태변경 실패: {result.get('message')}")
+
+    checked = result.get("checked", 0)
+    not_found = result.get("not_found", [])
+    complete_clicked = result.get("complete_clicked", False)
+
+    log(f"  ✓ {checked}건 체크, 완료상태 클릭={'성공' if complete_clicked else '실패'}")
+    if not_found:
+        log(f"  [경고] 매칭 실패: {not_found}")
+
+
 def step2_3_enter_delivery_memos(tracking_map: dict, log_fn=None):
     """
     32비트 워커(okosc_worker.py enter_delivery_memos)를 통해
@@ -274,6 +317,13 @@ class Auto3App:
             # 2-3. OKOSC 배송메모 입력
             self._log_msg("2~3단계: OKOSC 배송메모 입력 중...")
             step2_3_enter_delivery_memos(
+                tracking_map,
+                log_fn=lambda m: self._log_msg(m)
+            )
+
+            # 4. 상태변경 → 완료상태
+            self._log_msg("4단계: OKOSC 상태변경 → 완료상태 처리 중...")
+            step4_set_complete_status(
                 tracking_map,
                 log_fn=lambda m: self._log_msg(m)
             )
