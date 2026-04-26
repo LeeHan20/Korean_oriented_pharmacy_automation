@@ -220,22 +220,35 @@ def step5_automate_okosc() -> str:
     okosc_win.child_window(auto_id="ulBtnSearchCBJ").click_input()
     time.sleep(2)
 
-    # ── 택배목록 버튼 클릭 (auto_id=ulBtnTekBe) → Excel 파일 열림 ───────────
+    # ── 32비트 worker로 검색 결과 처방번호 목록 수집 (택배목록 클릭 전) ────────────────
+    presc_result = utils.call_okosc_worker("get_presc_numbers", timeout=20)
+    if presc_result.get("status") == "ok":
+        presc_numbers = presc_result.get("items", [])
+    else:
+        presc_numbers = []
+
+    # ── 택배목록 버튼 클릭 (auto_id=ulBtnTekBe) → Excel 파일 열림 ───────────────────
     okosc_win.child_window(auto_id="ulBtnTekBe").click_input()
 
-    # ── 통합문서가 열릴 때까지 대기 후 COM 연결 ──────────────────────────────
+    # ── 통합문서가 열릴 때까지 대기 후 COM 연결 ────────────────────────────────
     okosc_wb = utils.get_okosc_workbook()
-    return okosc_wb
+    return okosc_wb, presc_numbers
 
 
-def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
+def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str,
+                               presc_numbers: list = None) -> tuple:
     """
     통합문서 데이터를 택배관리 파일에 붙여넣기.
     - 통합문서 E~I → 택배관리 A~E (이어붙이기)
-    - 통합문서 A, C~D → 택배관리 K, L~M
+    - 통합문서 C~D → 택배관리 L~M
+    - OKOSC 검색결과 처방번호 (presc_numbers) → 택배관리 K열 + autocode DB
     - 새 행 F=1, G=4400, H=한약
+    presc_numbers: [{"presc_no": "8295", "patient": "..."}, ...] (worker 반환값)
+                  None 또는 비어있으면 통합문서 A열로 fallback
     반환: (새 데이터 시작 행, 새 데이터 끝 행)
     """
+    import json
+
     # ── 통합문서에서 데이터 읽기 (openpyxl) ──────────────────────────────────
     rows_data = []
     okosc_wb = openpyxl.load_workbook(okosc_path, data_only=True)
@@ -247,7 +260,8 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
         if val_a is None and val_e is None:
             break
         rows_data.append({
-            "A": row[0] if n > 0 else None,   # K로 갈 값
+            "A": row[0] if n > 0 else None,   # K로 갈 값 (처방번호)
+            "B": row[1] if n > 1 else None,   # J로 갈 값 (autocode, 4자리)
             "C": row[2] if n > 2 else None,   # L로 갈 값
             "D": row[3] if n > 3 else None,   # M으로 갈 값
             "E": row[4] if n > 4 else None,   # 택배관리 A
@@ -260,6 +274,62 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
     if not rows_data:
         raise ValueError("통합문서에 데이터가 없습니다.")
 
+    # ── 처방번호 ↔ autocode DB 저장 ──────────────────────────────────────────
+    import os
+    import json
+
+    def update_autocode_db(rows_data, db_path):
+        # 1. 기존 DB 로드
+        if os.path.exists(db_path):
+            with open(db_path, 'r', encoding='utf-8') as f:
+                autocode_db = json.load(f)
+        else:
+            autocode_db = {}
+
+        # 2. 현재 최대 오토코드 찾기
+        if autocode_db:
+            max_code = max(int(v) for v in autocode_db.values())
+        else:
+            max_code = 999  # 시작을 1000으로 만들기 위해
+
+        next_code = max_code + 1
+
+        # 3. 데이터 추가 (PRESC_NO = OKOSC 처방번호, 없으면 A열 fallback)
+        for rd in rows_data:
+            presc_no = rd.get("PRESC_NO") or rd.get("A")
+            if presc_no is None:
+                continue
+
+            key = str(presc_no).strip()
+
+            # 이미 존재하면 skip
+            if key in autocode_db:
+                continue
+
+            # 범위 체크
+            if next_code > 9999:
+                raise Exception("오토코드 범위 초과 (1000~9999)")
+
+            autocode_db[key] = str(next_code)
+            next_code += 1
+
+        # 4. 저장 (덮어쓰기지만 기존 데이터 유지된 상태)
+        with open(db_path, 'w', encoding='utf-8') as f:
+            json.dump(autocode_db, f, ensure_ascii=False, indent=2)
+
+        return autocode_db
+
+    # ── OKOSC 처방번호를 rows_data에 주입 ────────────────────────────────────────
+    # presc_numbers[i] = {presc_no, patient}  /  없으면 통합문서 A열 fallback
+    for i, rd in enumerate(rows_data):
+        if presc_numbers and i < len(presc_numbers):
+            rd["PRESC_NO"] = str(presc_numbers[i]["presc_no"]).strip()
+        else:
+            rd["PRESC_NO"] = str(rd["A"]).strip() if rd["A"] is not None else ""
+
+    # DB 호출: OKOSC 처방번호별 autocode 확정 (신규는 1000부터 순차 부여)
+    autocode_db = update_autocode_db(rows_data, config.AUTOCODE_DB_PATH)
+
     # ── 택배관리 파일에 붙여넣기 (openpyxl) ──────────────────────────────────
     wb = openpyxl.load_workbook(xlsx_path)
     ws = wb.active
@@ -270,6 +340,9 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
 
     for i, rd in enumerate(rows_data):
         target_row = new_start + i
+        presc_key = rd["PRESC_NO"]
+        autocode = autocode_db.get(presc_key, "")   # DB에서 부여된 4자리 코드
+
         ws.cell(row=target_row, column=1).value = rd["E"]   # A
         ws.cell(row=target_row, column=2).value = rd["F"]   # B
         ws.cell(row=target_row, column=3).value = rd["G"]   # C
@@ -278,9 +351,10 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str) -> tuple:
         ws.cell(row=target_row, column=6).value = config.DELIVERY_F_VALUE   # F
         ws.cell(row=target_row, column=7).value = config.DELIVERY_G_VALUE   # G
         ws.cell(row=target_row, column=8).value = config.DELIVERY_H_VALUE   # H
-        ws.cell(row=target_row, column=11).value = rd["A"]  # K
-        ws.cell(row=target_row, column=12).value = rd["C"]  # L
-        ws.cell(row=target_row, column=13).value = rd["D"]  # M
+        ws.cell(row=target_row, column=10).value = autocode  # J (DB 부여 autocode)
+        ws.cell(row=target_row, column=11).value = presc_key  # K (OKOSC 처방번호)
+        ws.cell(row=target_row, column=12).value = rd["C"]    # L
+        ws.cell(row=target_row, column=13).value = rd["D"]    # M
 
     new_end = new_start + len(rows_data) - 1
     wb.save(xlsx_path)
@@ -626,12 +700,12 @@ class Auto1App:
 
             # 5. OKOSC 자동화
             self._log_msg("5단계: OKOSC에서 택배목록 가져오는 중...")
-            okosc_wb = step5_automate_okosc()
-            self._log_msg("  ✓ 통합문서 로드 완료")
+            okosc_wb, presc_numbers = step5_automate_okosc()
+            self._log_msg(f"  ✓ 통합문서 로드 완료 / 처방번호 {len(presc_numbers)}건 수집")
 
             # 6-8. 데이터 붙여넣기
             self._log_msg("6~8단계: 통합문서 데이터 → 택배관리 붙여넣기 중...")
-            new_start, new_end = step6_7_8_paste_okosc_data(xlsx_path, okosc_wb)
+            new_start, new_end = step6_7_8_paste_okosc_data(xlsx_path, okosc_wb, presc_numbers)
             self._log_msg(f"  ✓ {new_end - new_start + 1}행 추가됨 ({new_start}~{new_end}행)")
 
             # 9. D/E열 정규화

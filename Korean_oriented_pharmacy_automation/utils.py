@@ -661,3 +661,44 @@ def print_okosc_controls():
     """
     w = find_okosc_app()
     w.print_control_identifiers()
+
+
+# ─── OKOSC 32비트 워커 호출 ───────────────────────────────────────────────────
+
+def call_okosc_worker(command: str, extra_args: list = None, timeout: int = 30) -> dict:
+    """
+    okosc_worker.py를 32비트 Python(config.PYTHON32_PATH)으로 실행하고
+    JSON 결과를 반환합니다.
+
+    command   : okosc_worker.py에 정의된 명령 문자열
+    extra_args: command 이후 추가 인수 리스트 (예: [json_file_path])
+    timeout   : 최대 대기 시간(초)
+    """
+    import subprocess
+    import json as _json
+
+    worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "okosc_worker.py")
+    args = [config.PYTHON32_PATH, worker_path, command]
+    if extra_args:
+        args.extend(str(a) for a in extra_args)
+
+    try:
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        out = proc.stdout.decode("utf-8", errors="replace").strip()
+        err = proc.stderr.decode("utf-8", errors="replace").strip()
+        if err:
+            # stderr 디버그 메시지를 메인 프로세스 stderr로 중계
+            import sys as _sys
+            print(err, file=_sys.stderr, flush=True)
+        if not out:
+            return {"status": "error", "message": err or "worker 출력 없음"}
+        return _json.loads(out)
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "message": f"worker timeout ({timeout}s)"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

@@ -28,14 +28,16 @@ import utils
 #  자동화 로직 함수들
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def step1_build_tracking_map() -> dict:
+def step1_build_tracking_map() -> tuple:
     """
     Downloads 폴더에서 최신 '주문등록_출력(복수건)_출력완료' 파일을 읽어
-    {이름: "로젠 XXXXXX"} 딕셔너리 반환.
+    {처방번호: "로젠 XXXXXX"} 딕셔너리 반환.
 
     D열: 운송장번호 (연속된 숫자열)
-    G열: 이름 (primary key)
+    S열: autocode (4자리, 0-indexed: 18) → DB에서 처방번호 역조회
     """
+    import json
+
     excel_path = utils.get_latest_file(
         config.DOWNLOAD_DIR,
         "주문등록_출력*복수건*_출력완료*.xls*"
@@ -48,32 +50,69 @@ def step1_build_tracking_map() -> dict:
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
 
-    tracking_map = {}
-    # 숫자로만 이루어진 운송장번호 패턴
+    # S열(index 18) autocode → 운송장번호 매핑
+    autocode_to_tracking = {}
     num_pattern = re.compile(r'\d+')
 
     for row in ws.iter_rows(min_row=2, values_only=True):
-        if len(row) < 7:
+        if len(row) < 19:
             continue
-        d_val = row[3]   # D열 (0-indexed: 3)
-        g_val = row[6]   # G열 (0-indexed: 6)
+        d_val = row[3]    # D열: 운송장번호
+        s_val = row[18]   # S열: autocode (4자리)
 
-        if not g_val or not d_val:
+        if not d_val or not s_val:
             continue
 
-        name = str(g_val).strip()
         d_str = str(d_val).strip()
+        s_str = str(s_val).strip()
 
-        # 운송장번호: 연속된 숫자 추출
         nums = num_pattern.findall(d_str)
-        if nums:
-            tracking_no = max(nums, key=len)   # 가장 긴 숫자열 선택
-            tracking_map[name] = f"로젠 {tracking_no}"
+        if not nums:
+            continue
+        tracking_no = max(nums, key=len)
+
+        ac_nums = num_pattern.findall(s_str)
+        if not ac_nums:
+            continue
+        autocode = ac_nums[0]
+
+        autocode_to_tracking[autocode] = f"로젠 {tracking_no}"
+
+    if not autocode_to_tracking:
+        raise ValueError(
+            "주문등록 파일에서 autocode/운송장번호를 찾을 수 없습니다.\n"
+            f"파일: {excel_path}"
+        )
+
+    # DB 로드: {처방번호: autocode} → 역변환 {autocode: 처방번호}
+    if not os.path.exists(config.AUTOCODE_DB_PATH):
+        raise FileNotFoundError(
+            f"autocode DB 파일이 없습니다: {config.AUTOCODE_DB_PATH}\n"
+            "자동화 1번을 먼저 실행하세요."
+        )
+    with open(config.AUTOCODE_DB_PATH, 'r', encoding='utf-8') as f:
+        db = json.load(f)  # {처방번호: autocode}
+
+    ac_to_presc = {v: k for k, v in db.items()}  # {autocode: 처방번호}
+
+    # 최종 매핑: {처방번호: "로젠 XXXXXX"}
+    tracking_map = {}
+    unmatched = []
+    for autocode, tracking_str in autocode_to_tracking.items():
+        presc_no = ac_to_presc.get(autocode)
+        if presc_no:
+            tracking_map[presc_no] = tracking_str
+        else:
+            unmatched.append(autocode)
+
+    if unmatched:
+        # 미매칭은 경고만 (일부 항목은 익산대장 등 DB 외 항목일 수 있음)
+        print(f"[경고] autocode DB 미매칭: {unmatched}")
 
     if not tracking_map:
         raise ValueError(
-            "주문등록 파일에서 운송장번호를 찾을 수 없습니다.\n"
-            f"파일: {excel_path}"
+            "주문등록 파일의 autocode와 DB가 일치하는 항목이 없습니다.\n"
+            f"파일: {excel_path}\n미매칭 autocode: {unmatched}"
         )
 
     return tracking_map, excel_path
@@ -81,202 +120,52 @@ def step1_build_tracking_map() -> dict:
 
 def step2_3_enter_delivery_memos(tracking_map: dict, log_fn=None):
     """
-    OKOSC 처방전검색 결과 창에서
-    각 행의 이름을 키로 배송메모를 입력합니다.
+    32비트 워커(okosc_worker.py enter_delivery_memos)를 통해
+    OKOSC 배송메모를 입력합니다.
 
-    OKOSC UI 상세 사항은 실제 프로그램을 보고 아래 TODO 부분을 수정하세요.
+    OKOSC 탐색(처방전송일자 검색, UltraDateTimeEditor 날짜 입력, 조제 필터,
+    DataItem 열거)은 모두 32비트 worker가 담당합니다.
+    탐색 로직은 auto1.py step5의 _set_ultra_date / 드롭다운 방식과 동일합니다.
     """
-    from pywinauto import Desktop
-    import pyautogui
+    import json
+    import tempfile
 
     def log(msg):
         if log_fn:
             log_fn(msg)
 
-    start_date, end_date = utils.get_search_dates()
+    # tracking_map을 임시 JSON 파일로 저장하여 32비트 worker에 전달
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                     suffix='.json', delete=False) as f:
+        json.dump(tracking_map, f, ensure_ascii=False)
+        json_path = f.name
 
-    # ── OKOSC 창 찾기 ──────────────────────────────────────────────────────────
-    okosc_win = utils.find_okosc_app()
-    okosc_win.set_focus()
-    time.sleep(0.3)
-
-    # ── 처방전검색(출력) 클릭 ──────────────────────────────────────────────────
-    # TODO: 실제 컨트롤 이름으로 수정 필요 (utils.print_okosc_controls() 참조)
+    log(f"  32비트 worker 호출 중... ({len(tracking_map)}건)")
     try:
-        okosc_win.child_window(title_re=".*처방전검색.*출력.*",
-                               control_type="Button").click_input()
-    except Exception:
+        result = utils.call_okosc_worker(
+            "enter_delivery_memos",
+            extra_args=[json_path],
+            timeout=180,
+        )
+    finally:
         try:
-            okosc_win.child_window(title_re=".*처방전검색.*").click_input()
-        except Exception as e:
-            raise RuntimeError(
-                f"OKOSC '처방전검색(출력)' 버튼을 찾지 못했습니다.\n상세: {e}"
-            )
-    time.sleep(0.5)
-
-    # ── 검색 다이얼로그 ────────────────────────────────────────────────────────
-    try:
-        search_dlg = Desktop(backend="uia").window(title_re=".*처방.*")
-        search_dlg.wait("visible", timeout=5)
-    except Exception:
-        search_dlg = okosc_win
-
-    # ── 대기처방 선택 ──────────────────────────────────────────────────────────
-    try:
-        search_dlg.child_window(title_re=".*대기처방.*").click_input()
-    except Exception:
-        pass
-
-    # ── 날짜 설정 ─────────────────────────────────────────────────────────────
-    _set_date_field_safe(search_dlg, "시작일", start_date)
-    _set_date_field_safe(search_dlg, "종료일", end_date)
-
-    # ── 조제 옵션 ─────────────────────────────────────────────────────────────
-    try:
-        search_dlg.child_window(title_re=".*조제.*",
-                                 control_type="RadioButton").click_input()
-    except Exception:
-        pass
-
-    # ── 검색 클릭 ─────────────────────────────────────────────────────────────
-    try:
-        search_dlg.child_window(title_re="검색|조회",
-                                 control_type="Button").click_input()
-    except Exception:
-        search_dlg.child_window(title_re="검색|조회").click_input()
-    time.sleep(1)
-
-    # ── 검색 결과 창 / 그리드에서 각 행 처리 ──────────────────────────────────
-    # TODO: 아래는 리스트 컨트롤 이름과 열 인덱스를 실제 값으로 수정해야 합니다.
-    #       utils.print_okosc_controls() 로 컨트롤 목록을 먼저 확인하세요.
-
-    result_rows = _get_okosc_result_rows(search_dlg)
-    matched = 0
-
-    for row_idx, row_info in enumerate(result_rows):
-        name = row_info.get("name", "")
-        if name not in tracking_map:
-            log(f"  매핑 없음: {name}")
-            continue
-
-        tracking_str = tracking_map[name]
-        log(f"  [{row_idx+1}] {name} → {tracking_str}")
-
-        # 해당 행 선택
-        _select_okosc_row(search_dlg, row_idx)
-
-        # 메모수정 → 배송메모 입력 → 저장
-        _enter_delivery_memo(search_dlg, tracking_str)
-        matched += 1
-        time.sleep(0.3)
-
-    log(f"배송메모 입력 완료: {matched}/{len(result_rows)}건")
-
-
-def _get_okosc_result_rows(dlg) -> list:
-    """
-    OKOSC 검색 결과 창에서 행 목록 추출.
-    TODO: 실제 그리드 컨트롤 이름으로 수정 필요.
-    """
-    rows = []
-    try:
-        # DataGrid / ListView 형태
-        grid = dlg.child_window(control_type="DataGrid")
-        for i, item in enumerate(grid.children(control_type="DataItem")):
-            name_cell = item.children()[0]   # TODO: 이름 열 인덱스 확인
-            rows.append({"name": name_cell.window_text().strip(), "_idx": i})
-    except Exception:
-        try:
-            list_ctrl = dlg.child_window(control_type="List")
-            for i, item in enumerate(list_ctrl.items()):
-                rows.append({"name": item.window_text().strip(), "_idx": i})
-        except Exception:
-            pass
-    return rows
-
-
-def _select_okosc_row(dlg, row_idx: int):
-    """OKOSC 검색 결과에서 row_idx 번째 행을 선택."""
-    try:
-        grid = dlg.child_window(control_type="DataGrid")
-        item = grid.children(control_type="DataItem")[row_idx]
-        item.click_input()
-    except Exception:
-        try:
-            list_ctrl = dlg.child_window(control_type="List")
-            list_ctrl.items()[row_idx].click_input()
+            os.remove(json_path)
         except Exception:
             pass
 
+    if result.get("status") != "ok":
+        raise RuntimeError(f"배송메모 입력 실패: {result.get('message')}")
 
-def _enter_delivery_memo(dlg, memo_text: str):
-    """
-    OKOSC 메모수정 창을 열고 배송메모 필드에 memo_text 를 입력 후 저장.
-    TODO: 실제 컨트롤 이름으로 수정 필요.
-    """
-    from pywinauto import Desktop
+    matched = result.get("matched", 0)
+    not_matched = result.get("not_matched", [])
+    results = result.get("results", [])
 
-    # 메모수정 버튼/링크 클릭
-    try:
-        dlg.child_window(title_re=".*메모수정.*|.*메모 수정.*").click_input()
-    except Exception:
-        try:
-            dlg.child_window(title_re=".*메모.*", control_type="Button").click_input()
-        except Exception as e:
-            raise RuntimeError(f"메모수정 버튼을 찾지 못했습니다: {e}")
-    time.sleep(0.4)
+    for r in results:
+        mark = "✓" if r["status"] == "ok" else "✗"
+        err_txt = f" ({r['error']})" if r.get("error") else ""
+        log(f"  [{mark}] {r['presc_no']} → {r.get('memo', '')}{err_txt}")
 
-    # 메모수정 팝업/다이얼로그
-    try:
-        memo_dlg = Desktop(backend="uia").window(title_re=".*메모.*")
-        memo_dlg.wait("visible", timeout=5)
-    except Exception:
-        memo_dlg = dlg
-
-    # 배송메모 입력 필드 찾기
-    try:
-        field = memo_dlg.child_window(title_re=".*배송메모.*", control_type="Edit")
-    except Exception:
-        # 배송메모 레이블 옆의 Edit 컨트롤 찾기
-        try:
-            fields = memo_dlg.children(control_type="Edit")
-            # TODO: 배송메모 필드가 몇 번째인지 확인 후 인덱스 수정
-            field = fields[-1]
-        except Exception as e:
-            raise RuntimeError(f"배송메모 입력 필드를 찾지 못했습니다: {e}")
-
-    field.click_input()
-    field.set_text(memo_text)
-    time.sleep(0.2)
-
-    # 저장 버튼
-    try:
-        memo_dlg.child_window(title_re="저장|확인",
-                               control_type="Button").click_input()
-    except Exception:
-        memo_dlg.child_window(title_re="저장|확인").click_input()
-    time.sleep(0.3)
-
-
-def _set_date_field_safe(dlg, hint: str, date_str: str):
-    """날짜 필드 안전하게 설정 (예외 무시)."""
-    try:
-        field = dlg.child_window(title_re=f".*{hint}.*", control_type="Edit")
-        field.set_text(date_str)
-    except Exception:
-        try:
-            field = dlg.child_window(title_re=f".*{hint}.*",
-                                      control_type="DateTimePicker")
-            import win32com.client
-            import pyautogui
-            rect = field.rectangle()
-            x = (rect.left + rect.right) // 2
-            y = (rect.top + rect.bottom) // 2
-            pyautogui.click(x, y)
-            pyautogui.hotkey('ctrl', 'a')
-            pyautogui.write(date_str.replace("-", ""), interval=0.05)
-        except Exception:
-            pass
+    log(f"배송메모 입력 완료: {matched}/{len(tracking_map)}건")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
