@@ -264,8 +264,46 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
     title_pat = re.compile(r'통합\s*문서\s*\d+')
     temp_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_okosc_temp.xlsx")
     abs_temp = os.path.abspath(temp_path)
-    deadline = time.time() + 20
-    f12_attempted = False
+    deadline = time.time() + 30
+    last_f12_attempt = 0.0  # 마지막 F12 시도 시각 (0이면 미시도)
+
+    def _dismiss_dialogs(target_hwnd):
+        """
+        덮어쓰기·형식 확인 다이얼로그를 닫습니다.
+        1) 타이틀 직접 검색
+        2) #32770 클래스 기반 전수 검색 (한국어 Excel 대응)
+        """
+        dismissed = False
+        # ── 방법 1: 타이틀 직접 매칭 ───────────────────────────────────────
+        for dlg_name in ("Microsoft Excel", "Excel"):
+            hw = win32gui.FindWindow(None, dlg_name)
+            if hw and win32gui.IsWindowVisible(hw):
+                try:
+                    win32gui.SetForegroundWindow(hw)
+                except Exception:
+                    pass
+                pyautogui.press('enter')
+                time.sleep(0.3)
+                dismissed = True
+
+        # ── 방법 2: #32770 클래스 기반 (표준 Windows 다이얼로그) ───────────
+        found_dialogs = []
+        def _cb(hwnd, _):
+            if (win32gui.GetClassName(hwnd) == '#32770'
+                    and win32gui.IsWindowVisible(hwnd)
+                    and hwnd != target_hwnd):
+                found_dialogs.append(hwnd)
+        win32gui.EnumWindows(_cb, None)
+        for hw in found_dialogs:
+            try:
+                win32gui.SetForegroundWindow(hw)
+            except Exception:
+                pass
+            pyautogui.press('enter')
+            time.sleep(0.3)
+            dismissed = True
+
+        return dismissed
 
     while time.time() < deadline:
         # XLMAIN 창 중 "통합 문서N" 타이틀인 것 찾기
@@ -277,8 +315,15 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
                     target_hwnd = hwnd
         win32gui.EnumWindows(_enum, None)
 
-        if target_hwnd and not f12_attempted:
-            f12_attempted = True
+        # F12 시도: 아직 한 번도 안 했거나, 10초 지나도 파일이 없으면 재시도
+        should_f12 = (target_hwnd is not None) and (
+            last_f12_attempt == 0.0
+            or (time.time() - last_f12_attempt > 10.0
+                and not (os.path.exists(abs_temp) and os.path.getsize(abs_temp) > 0))
+        )
+
+        if should_f12:
+            last_f12_attempt = time.time()
             time.sleep(0.8)  # Excel 완전 초기화 대기
 
             # 기존 임시 파일 삭제
@@ -292,7 +337,7 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
             try:
                 win32clipboard.OpenClipboard(0)
                 win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardData(13, abs_temp)  # CF_UNICODETEXT = 13
+                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, abs_temp)
                 win32clipboard.CloseClipboard()
             except Exception:
                 pass
@@ -303,24 +348,21 @@ def get_okosc_workbook(wait_new: bool = False, before_names: set = None):
                 time.sleep(0.5)
 
                 pyautogui.hotkey('f12')          # 다른 이름으로 저장
-                time.sleep(2.0)                  # 대화상자 열릴 때까지 대기
+                time.sleep(2.5)                  # 대화상자 열릴 때까지 대기
 
                 # 파일 이름 필드: 전체 선택 후 클립보드 경로 붙여넣기
                 pyautogui.hotkey('ctrl', 'a')
-                time.sleep(0.15)
-                pyautogui.hotkey('ctrl', 'v')
                 time.sleep(0.2)
+                pyautogui.hotkey('ctrl', 'v')
+                time.sleep(0.3)
                 pyautogui.press('enter')
-                time.sleep(1.0)
+                time.sleep(1.5)
 
                 # 덮어쓰기·형식 확인 다이얼로그 처리 (Enter로 수락)
-                for _ in range(4):
+                for _ in range(8):
                     time.sleep(0.5)
-                    for dlg_name in ("Microsoft Excel", "Excel"):
-                        hw = win32gui.FindWindow(None, dlg_name)
-                        if hw and win32gui.IsWindowVisible(hw):
-                            pyautogui.press('enter')
-                            time.sleep(0.4)
+                    _dismiss_dialogs(target_hwnd)
+
             except Exception:
                 pass
 

@@ -1,13 +1,6 @@
-"""
-자동화 2번 - 운송장 업로드
-===========================================
-흐름:
-  1.  로젠택배 → 예약관리-주문등록/출력(복수건) → 엑셀저장 요청
-  2.  Downloads 에서 '주문등록_출력(복수건)_출력완료' 최신 파일 선택
-  3.  Excel → CSV 변환 (데이터 손실 없음)
-  4.  홈페이지 주문관리-로젠택배운송장업로드 → 파일선택에 CSV 업로드
-  5.  확인 버튼 클릭
-"""
+'''
+자동화 test번 - 환경 제약에 따른 테스트 파일
+'''
 
 import os
 import csv
@@ -27,64 +20,6 @@ import utils
 # ═══════════════════════════════════════════════════════════════════════════════
 #  자동화 로직 함수들
 # ═══════════════════════════════════════════════════════════════════════════════
-
-def step1_request_rosen_excel(driver):
-    """
-    로젠택배 예약관리-주문등록/출력(복수건) 페이지에서 엑셀저장 클릭.
-    """
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-
-    # 로젠택배 탭으로 전환하거나 새 탭 열기
-    rosen_found = False
-    for handle in driver.window_handles:
-        driver.switch_to.window(handle)
-        if "ilogen" in driver.current_url:
-            rosen_found = True
-            break
-    if not rosen_found:
-        driver.execute_script("window.open(arguments[0]);", config.ROSEN_URL)
-        driver.switch_to.window(driver.window_handles[-1])
-
-    wait = WebDriverWait(driver, config.PAGE_LOAD_TIMEOUT)
-
-    # 예약관리 메뉴 (사이드바 - 메인 페이지에 있음)
-    menu = wait.until(EC.element_to_be_clickable(
-        (By.XPATH, "//*[contains(text(),'예약관리')]")
-    ))
-
-    parent = menu.find_element(By.XPATH, "ancestor::*[contains(@class,'toggle-menu')]")
-    classes = parent.get_attribute("class")
-
-    if "opened" not in classes:
-        menu.click()
-    time.sleep(0.4)
-
-    # 주문등록/출력(복수건) (사이드바 - 메인 페이지에 있음)
-    sub = wait.until(EC.element_to_be_clickable(
-        (By.XPATH,
-         "//*[contains(text(),'주문등록') and contains(text(),'복수건')] | "
-         "//*[contains(text(),'복수건')]")
-    ))
-    sub.click()
-    time.sleep(1)
-
-    # 콘텐츠는 active 탭의 iframe 안에 있음
-    wait.until(EC.frame_to_be_available_and_switch_to_it(
-        (By.CSS_SELECTOR, "#ib-contents .ib-tab-contents__item.is-active iframe")
-    ))
-
-    # 엑셀저장 버튼 클릭 (onclick="excelDownload();" 으로 직접 찾기)
-    before_ts = time.time()
-    excel_btn = wait.until(EC.element_to_be_clickable(
-        (By.XPATH, "//button[contains(@onclick,'excelDownload')]")
-    ))
-    excel_btn.click()
-
-    driver.switch_to.default_content()
-    return before_ts
-
 
 def step2_get_rosen_excel(before_ts: float) -> str:
     """Downloads 에서 '주문등록_출력(복수건)_출력완료' 최신 파일 반환."""
@@ -182,7 +117,7 @@ def step4_upload_to_homepage(driver, csv_path: str):
 
 def step5_click_confirm(driver):
     """
-    저장하기 버튼 클릭. (right 프레임 안에 있음)
+    확인 버튼이 나타나면 즉시 클릭. (right 프레임 안에 있음)
     """
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
@@ -252,7 +187,6 @@ def step6_update_order_status(driver, excel_path: str):
             num_str = str(s_val).strip()
         if num_str:
             order_numbers.append(num_str)
-    wb.close()
 
     if not order_numbers:
         return
@@ -273,6 +207,7 @@ def step6_update_order_status(driver, excel_path: str):
             checkbox = driver.find_element(
                 By.CSS_SELECTOR, f"input[name='fs_nos[]'][value='{order_no}']"
             )
+            print(f"체크박스 : {checkbox}")
             tr = checkbox.find_element(By.XPATH, "./ancestor::tr[1]")
 
             # tr 안에 인라인으로 존재하는 select[name='fs_status'] 를 직접 찾아 변경
@@ -310,7 +245,7 @@ def step6_update_order_status(driver, excel_path: str):
 #  tkinter GUI 앱
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class Auto2App:
+class AutotestApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("자동화 2번 - 운송장 업로드")
@@ -401,16 +336,9 @@ class Auto2App:
         pythoncom.CoInitialize()
         driver = None
         try:
-            # 1. 로젠택배 엑셀저장
-            self._log_msg("1단계: 로젠택배 엑셀저장 요청 중...")
+            # 1. element 설정
+            excel_path = r"C:\Users\COM\Downloads\주문등록_출력(복수건)_출력완료(8)건 (2026-04-26 14시20분37초).xlsx"  # 테스트용 하드코딩
             driver = utils.connect_chrome()
-            before_ts = step1_request_rosen_excel(driver)
-            self._log_msg("  ✓ 엑셀저장 요청 완료")
-
-            # 2. 파일 대기
-            self._log_msg("2단계: 다운로드 파일 대기 중...")
-            excel_path = step2_get_rosen_excel(before_ts)
-            self._log_msg(f"  ✓ 파일: {os.path.basename(excel_path)}")
 
             # 3. CSV 변환
             self._log_msg("3단계: CSV 변환 중...")
@@ -452,5 +380,5 @@ class Auto2App:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = Auto2App(root)
+    app = AutotestApp(root)
     root.mainloop()
