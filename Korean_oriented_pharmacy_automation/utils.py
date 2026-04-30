@@ -662,7 +662,6 @@ def print_okosc_controls():
     w = find_okosc_app()
     w.print_control_identifiers()
 
-
 # ─── OKOSC 32비트 워커 호출 ───────────────────────────────────────────────────
 
 def call_okosc_worker(command: str, extra_args: list = None, timeout: int = 30) -> dict:

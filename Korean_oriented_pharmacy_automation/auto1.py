@@ -143,7 +143,10 @@ def step5_automate_okosc() -> str:
 
     # ── OKOSC 창 찾기 ──────────────────────────────────────────────────────────
     okosc_win = utils.find_okosc_app()
-    okosc_win.set_focus()
+    try:
+        okosc_win.set_focus()
+    except Exception:
+        pass
     time.sleep(0.5)
 
     # ── 검색 기준 → 진행상태 설정 (auto_id=ulCboSearch) ──────────────────────
@@ -260,7 +263,7 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str,
         if val_a is None and val_e is None:
             break
         rows_data.append({
-            "A": row[0] if n > 0 else None,   # K로 갈 값 (처방번호)
+            "A": row[0] if n > 0 else None,   # K로 갈 값 
             "B": row[1] if n > 1 else None,   # J로 갈 값 (autocode, 4자리)
             "C": row[2] if n > 2 else None,   # L로 갈 값
             "D": row[3] if n > 3 else None,   # M으로 갈 값
@@ -352,7 +355,7 @@ def step6_7_8_paste_okosc_data(xlsx_path: str, okosc_path: str,
         ws.cell(row=target_row, column=7).value = config.DELIVERY_G_VALUE   # G
         ws.cell(row=target_row, column=8).value = config.DELIVERY_H_VALUE   # H
         ws.cell(row=target_row, column=10).value = autocode  # J (DB 부여 autocode)
-        ws.cell(row=target_row, column=11).value = presc_key  # K (OKOSC 처방번호)
+        ws.cell(row=target_row, column=11).value = rd["A"]    # K (통합문서 A열)
         ws.cell(row=target_row, column=12).value = rd["C"]    # L
         ws.cell(row=target_row, column=13).value = rd["D"]    # M
 
@@ -460,21 +463,29 @@ def step_highlight_checks(xlsx_path: str):
         g_val = ws.cell(row=row, column=7).value
         h_val = ws.cell(row=row, column=8).value
 
-        # F열: 1이 아닌 경우 (None 포함)
+        # F열 / G열 처리
         try:
-            f_ok = int(f_val) == 1
+            f_int = int(f_val)
         except (TypeError, ValueError):
-            f_ok = False
-        if not f_ok:
-            ws.cell(row=row, column=6).fill = LIGHT_GREEN
+            f_int = None
 
-        # G열: 4400이 아닌 경우 (숫자 또는 문자열 모두 비교)
-        try:
-            g_ok = str(g_val).strip() == "4400"
-        except (TypeError, ValueError):
-            g_ok = False
-        if not g_ok:
+        if f_int is not None and f_int > 1:
+            # F > 1: G = F * 4400 으로 업데이트, 두 열 모두 하이라이트
+            ws.cell(row=row, column=7).value = f_int * 4400
+            ws.cell(row=row, column=6).fill = LIGHT_GREEN
             ws.cell(row=row, column=7).fill = LIGHT_GREEN
+        else:
+            # F열: 1이 아닌 경우 하이라이트
+            if f_int != 1:
+                ws.cell(row=row, column=6).fill = LIGHT_GREEN
+
+            # G열: 4400이 아닌 경우 하이라이트
+            try:
+                g_ok = str(g_val).strip() == "4400"
+            except (TypeError, ValueError):
+                g_ok = False
+            if not g_ok:
+                ws.cell(row=row, column=7).fill = LIGHT_GREEN
 
         # H열: '한약'이 아닌 경우
         h_ok = str(h_val).strip() == "한약" if h_val is not None else False

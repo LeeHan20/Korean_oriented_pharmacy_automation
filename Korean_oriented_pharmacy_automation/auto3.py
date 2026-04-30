@@ -118,57 +118,10 @@ def step1_build_tracking_map() -> tuple:
     return tracking_map, excel_path
 
 
-def step4_set_complete_status(tracking_map: dict, log_fn=None):
+def step2_3_4_enter_memo_and_complete(tracking_map: dict, log_fn=None):
     """
-    OKOSC 그리드에서 tracking_map의 처방번호에 해당하는 행들의
-    체크박스를 선택한 후 상태변경 → 완료상태 로 변경합니다.
-    """
-    import json
-    import tempfile
-
-    def log(msg):
-        if log_fn:
-            log_fn(msg)
-
-    presc_nos = list(tracking_map.keys())
-    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
-                                     suffix='.json', delete=False) as f:
-        json.dump({"presc_nos": presc_nos}, f, ensure_ascii=False)
-        json_path = f.name
-
-    log(f"  완료 상태변경: {presc_nos} ({len(presc_nos)}건)")
-    try:
-        result = utils.call_okosc_worker(
-            "check_and_complete",
-            extra_args=[json_path],
-            timeout=60,
-        )
-    finally:
-        try:
-            os.remove(json_path)
-        except Exception:
-            pass
-
-    if result.get("status") != "ok":
-        raise RuntimeError(f"상태변경 실패: {result.get('message')}")
-
-    checked = result.get("checked", 0)
-    not_found = result.get("not_found", [])
-    complete_clicked = result.get("complete_clicked", False)
-
-    log(f"  ✓ {checked}건 체크, 완료상태 클릭={'성공' if complete_clicked else '실패'}")
-    if not_found:
-        log(f"  [경고] 매칭 실패: {not_found}")
-
-
-def step2_3_enter_delivery_memos(tracking_map: dict, log_fn=None):
-    """
-    32비트 워커(okosc_worker.py enter_delivery_memos)를 통해
-    OKOSC 배송메모를 입력합니다.
-
-    OKOSC 탐색(처방전송일자 검색, UltraDateTimeEditor 날짜 입력, 조제 필터,
-    DataItem 열거)은 모두 32비트 worker가 담당합니다.
-    탐색 로직은 auto1.py step5의 _set_ultra_date / 드롭다운 방식과 동일합니다.
+    처방번호별로 배송메모 입력 → 완료상태 처리를 순차 실행합니다.
+    흐름: 메모 입력 → 완료 누르기 → 다음 항목 반복
     """
     import json
     import tempfile
@@ -177,38 +130,68 @@ def step2_3_enter_delivery_memos(tracking_map: dict, log_fn=None):
         if log_fn:
             log_fn(msg)
 
-    # tracking_map을 임시 JSON 파일로 저장하여 32비트 worker에 전달
-    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
-                                     suffix='.json', delete=False) as f:
-        json.dump(tracking_map, f, ensure_ascii=False)
-        json_path = f.name
+    total = len(tracking_map)
+    success = 0
+    failed = []
 
-    log(f"  32비트 worker 호출 중... ({len(tracking_map)}건)")
-    try:
-        result = utils.call_okosc_worker(
-            "enter_delivery_memos",
-            extra_args=[json_path],
-            timeout=180,
-        )
-    finally:
+    for idx, (presc_no, tracking_str) in enumerate(tracking_map.items(), 1):
+        log(f"[{idx}/{total}] {presc_no} → {tracking_str}")
+
+        # ── 배송메모 입력 ────────────────────────────────────────────────────
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                         suffix='.json', delete=False) as f:
+            json.dump({presc_no: tracking_str}, f, ensure_ascii=False)
+            memo_json = f.name
         try:
-            os.remove(json_path)
-        except Exception:
-            pass
+            memo_result = utils.call_okosc_worker(
+                "enter_delivery_memos",
+                extra_args=[memo_json],
+                timeout=60,
+            )
+        finally:
+            try:
+                os.remove(memo_json)
+            except Exception:
+                pass
 
-    if result.get("status") != "ok":
-        raise RuntimeError(f"배송메모 입력 실패: {result.get('message')}")
+        if memo_result.get("status") != "ok":
+            log(f"  ✗ 배송메모 실패: {memo_result.get('message')}")
+            failed.append(presc_no)
+            continue
 
-    matched = result.get("matched", 0)
-    not_matched = result.get("not_matched", [])
-    results = result.get("results", [])
+        for r in memo_result.get("results", []):
+            mark = "✓" if r["status"] == "ok" else "✗"
+            err_txt = f" ({r['error']})" if r.get("error") else ""
+            log(f"  [{mark}] 메모: {r.get('memo', '')}{err_txt}")
 
-    for r in results:
-        mark = "✓" if r["status"] == "ok" else "✗"
-        err_txt = f" ({r['error']})" if r.get("error") else ""
-        log(f"  [{mark}] {r['presc_no']} → {r.get('memo', '')}{err_txt}")
+        # ── 완료상태 처리 ────────────────────────────────────────────────────
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                         suffix='.json', delete=False) as f:
+            json.dump({"presc_nos": [presc_no]}, f, ensure_ascii=False)
+            complete_json = f.name
+        try:
+            complete_result = utils.call_okosc_worker(
+                "check_and_complete",
+                extra_args=[complete_json],
+                timeout=60,
+            )
+        finally:
+            try:
+                os.remove(complete_json)
+            except Exception:
+                pass
 
-    log(f"배송메모 입력 완료: {matched}/{len(tracking_map)}건")
+        if complete_result.get("status") != "ok":
+            log(f"  ✗ 완료상태 실패: {complete_result.get('message')}")
+            failed.append(presc_no)
+            continue
+
+        checked = complete_result.get("checked", 0)
+        clicked = complete_result.get("complete_clicked", False)
+        log(f"  ✓ 완료: {checked}건 체크, 클릭={'성공' if clicked else '실패'}")
+        success += 1
+
+    log(f"전체 처리 완료: {success}/{total}건" + (f", 실패: {failed}" if failed else ""))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -314,16 +297,9 @@ class Auto3App:
             if len(tracking_map) > 5:
                 self._log_msg(f"    ... 외 {len(tracking_map)-5}건")
 
-            # 2-3. OKOSC 배송메모 입력
-            self._log_msg("2~3단계: OKOSC 배송메모 입력 중...")
-            step2_3_enter_delivery_memos(
-                tracking_map,
-                log_fn=lambda m: self._log_msg(m)
-            )
-
-            # 4. 상태변경 → 완료상태
-            self._log_msg("4단계: OKOSC 상태변경 → 완료상태 처리 중...")
-            step4_set_complete_status(
+            # 2-3-4. OKOSC 배송메모 입력 → 완료상태 (항목별 순차)
+            self._log_msg("2~4단계: 배송메모 입력 및 완료상태 처리 중...")
+            step2_3_4_enter_memo_and_complete(
                 tracking_map,
                 log_fn=lambda m: self._log_msg(m)
             )
