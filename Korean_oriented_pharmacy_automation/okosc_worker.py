@@ -568,6 +568,122 @@ def cmd_save_pdf():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  get_presc_screenshot: 출력→첩약보험(처방전) → 처방전출력 창 캡처 → 닫기
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def cmd_get_presc_screenshot():
+    """
+    1. 출력 버튼 클릭
+    2. 첩약보험(처방전) 메뉴 클릭
+    3. 처방전출력 창이 열릴 때까지 대기 (최대 15초)
+    4. 스크린샷을 argv[2] 경로에 PNG로 저장
+    5. 창 닫기
+    반환: {"status": "ok", "img_path": "..."}
+    """
+    import win32gui
+    import win32con
+    from PIL import ImageGrab
+    from pywinauto.keyboard import send_keys
+    from pywinauto import Desktop as _Desktop
+
+    if len(sys.argv) < 3:
+        return {"status": "error", "message": "이미지 저장 경로를 argv[2]로 전달하세요"}
+
+    save_path = sys.argv[2]
+
+    win = _okosc_win()
+    win.set_focus()
+    time.sleep(0.3)
+
+    # ── 출력 버튼 클릭 ───────────────────────────────────────────────────────
+    clicked_menu = False
+    for try_title in ["출력", "출  력"]:
+        try:
+            btn = win.child_window(title=try_title, control_type="Button")
+            btn.click_input()
+            clicked_menu = True
+            break
+        except Exception:
+            pass
+    if not clicked_menu:
+        try:
+            for b in win.descendants(control_type="Button"):
+                if "출력" in b.window_text():
+                    b.click_input()
+                    clicked_menu = True
+                    break
+        except Exception:
+            pass
+    if not clicked_menu:
+        return {"status": "error", "message": "출력 버튼을 찾을 수 없습니다"}
+
+    time.sleep(0.5)
+    print("[DEBUG get_presc_screenshot] 출력 버튼 클릭 완료", file=sys.stderr)
+
+    # ── 첩약보험(처방전) 메뉴 클릭 ──────────────────────────────────────────
+    clicked_presc = False
+    for _ in range(10):
+        try:
+            for ctrl_type in ("MenuItem", "ListItem", "Button", "Text"):
+                for w in _Desktop(backend="uia").windows():
+                    for ci in w.descendants(control_type=ctrl_type):
+                        txt = ci.window_text()
+                        if "첩약보험" in txt and "처방전" in txt:
+                            ci.click_input()
+                            clicked_presc = True
+                            break
+                    if clicked_presc:
+                        break
+                if clicked_presc:
+                    break
+            if clicked_presc:
+                break
+        except Exception:
+            pass
+        time.sleep(0.2)
+
+    if not clicked_presc:
+        send_keys("{ESCAPE}")
+        return {"status": "error", "message": "첩약보험(처방전) 메뉴 항목을 찾을 수 없습니다"}
+
+    print("[DEBUG get_presc_screenshot] 첩약보험(처방전) 클릭 완료", file=sys.stderr)
+
+    # ── 처방전출력 창 대기 ───────────────────────────────────────────────────
+    presc_hwnd = None
+    for _ in range(30):
+        def _find_presc(h, _):
+            nonlocal presc_hwnd
+            t = win32gui.GetWindowText(h)
+            if "처방전출력" in t and win32gui.IsWindowVisible(h):
+                presc_hwnd = h
+        win32gui.EnumWindows(_find_presc, None)
+        if presc_hwnd:
+            break
+        time.sleep(0.5)
+
+    if not presc_hwnd:
+        return {"status": "error", "message": "처방전출력 창이 열리지 않았습니다 (15초 대기)"}
+
+    print(f"[DEBUG get_presc_screenshot] 처방전출력 창 발견 hwnd={presc_hwnd}", file=sys.stderr)
+
+    win32gui.ShowWindow(presc_hwnd, win32con.SW_RESTORE)
+    win32gui.SetForegroundWindow(presc_hwnd)
+    time.sleep(0.8)
+
+    # ── 스크린샷 저장 ────────────────────────────────────────────────────────
+    left, top, right, bottom = win32gui.GetWindowRect(presc_hwnd)
+    img = ImageGrab.grab(bbox=(left, top, right, bottom))
+    img.save(save_path)
+    print(f"[DEBUG get_presc_screenshot] 저장 완료: {save_path}", file=sys.stderr)
+
+    # ── 창 닫기 ──────────────────────────────────────────────────────────────
+    win32gui.PostMessage(presc_hwnd, win32con.WM_CLOSE, 0, 0)
+    time.sleep(0.5)
+
+    return {"status": "ok", "img_path": save_path}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  setup_search: OKOSC 검색 설정 및 실행 (auto3.py 루프 전 1회 호출)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1032,6 +1148,7 @@ COMMANDS = {
     "get_patient":          cmd_get_patient,
     "get_dosage":           cmd_get_dosage,
     "save_pdf":             cmd_save_pdf,
+    "get_presc_screenshot": cmd_get_presc_screenshot,
     "setup_search":         cmd_setup_search,
     "enter_delivery_memos": cmd_enter_delivery_memos,
     "get_presc_numbers":    cmd_get_presc_numbers,

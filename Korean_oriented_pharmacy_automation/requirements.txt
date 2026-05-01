@@ -21,3 +21,6 @@ xlrd>=2.0.1
 
 # PDF 텍스트/테이블 추출 (처방전 PDF 파싱)
 pdfplumber>=0.10.0
+
+# Windows 내장 OCR (처방전 이미지 → 텍스트, Korean WinRT OCR)
+winsdk>=1.0.0b10

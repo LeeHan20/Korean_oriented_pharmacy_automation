@@ -407,11 +407,9 @@ def step3_check_origin(wb_path: str, herbs: list, log_fn=None) -> bool:
         return True
 
     rows_str = ", ".join(str(r) for r in missing_rows)
-    log(f"  원산지 확인 필요 행: {rows_str}")
     return utils.human_review_dialog(
         "원산지 확인 필요",
-        f"가격표 시트에 다음 행의 E~L 열(원산지)이 비어 있습니다:\n"
-        f"행 번호: {rows_str}\n\n원산지를 확인한 후 계속 진행하세요.",
+        f"가격표 시트에 원산지 확인이 필요한 약재가 있습니다.\n",
         ok_text="확인 완료 - 계속",
         cancel_text="중단",
     )
@@ -453,35 +451,35 @@ def step4_fill_patient_info(wb_path: str, search_dlg, log_fn=None,
     if clinic_name:
         log(f"  한의원명: {clinic_name}, 한의원전화: {clinic_contact}")
 
-    writes = {"O6": patient_name, "O7": contact, "O5": address}
+    writes = {"O6": patient_name, "O7": contact, "O8": address}
     if clinic_name:
         writes["M6"] = clinic_name
     if clinic_contact:
         writes["M7"] = clinic_contact
     _write_cells(wb_path, SHEET_PRICE, writes, log_fn=log_fn)
-    log("  환자 정보 입력 완료 (O5/O6/O7)")
+    log("  환자 정보 입력 완료 (O6/O7/O8)")
 
 
 def step5_save_prescription_pdf(search_dlg, log_fn=None) -> str:
     """
-    OKOSC 출력 → PDF저장 클릭하여 처방전 PDF를 저장하고 경로를 반환합니다.
-    반환: PDF 파일 경로 (str) 또는 "" (실패 시)
+    출력 → 첩약보험(처방전) 클릭 → 처방전출력 창 스크린샷 저장 → 창 닫기.
+    반환: PNG 이미지 경로 (str) 또는 "" (실패 시)
     """
     def log(m):
         if log_fn:
             log_fn(m)
 
-    pdf_path = os.path.join(os.path.expanduser("~"), "Downloads",
-                            f"presc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+    img_path = os.path.join(os.path.expanduser("~"), "Downloads",
+                            f"presc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
 
-    log("  32비트 worker로 처방전 PDF 저장 중...")
-    res = _call_worker("save_pdf", extra_args=[pdf_path], timeout=40)
+    log("  32비트 worker로 처방전출력 창 캡처 중...")
+    res = _call_worker("get_presc_screenshot", extra_args=[img_path], timeout=30)
     if res.get("status") != "ok":
-        log(f"  경고: PDF 저장 실패 - {res.get('message')}")
+        log(f"  경고: 처방전 캡처 실패 - {res.get('message')}")
         return ""
 
-    actual_path = res.get("pdf_path", pdf_path)
-    log(f"  처방전 PDF 저장 완료: {os.path.basename(actual_path)}")
+    actual_path = res.get("img_path", img_path)
+    log(f"  처방전 스크린샷 완료: {os.path.basename(actual_path)}")
     return actual_path
 
 
@@ -611,9 +609,122 @@ def parse_prescription_pdf(pdf_path: str) -> dict:
     return result
 
 
+def _ocr_winrt(img_path: str) -> str:
+    """
+    Windows 내장 OCR(WinRT)로 이미지에서 한국어 텍스트를 추출합니다.
+    pip install winsdk 필요.
+    """
+    import asyncio
+
+    async def _run():
+        from winsdk.windows.media.ocr import OcrEngine
+        from winsdk.windows.globalization import Language
+        from winsdk.windows.graphics.imaging import BitmapDecoder
+        from winsdk.windows.storage import StorageFile
+
+        abs_path = os.path.abspath(img_path)
+        file_obj = await StorageFile.get_file_from_path_async(abs_path)
+        stream   = await file_obj.open_async(0)       # 0 = FileAccessMode.Read
+        decoder  = await BitmapDecoder.create_async(stream)
+        bitmap   = await decoder.get_software_bitmap_async()
+
+        lang   = Language("ko")
+        engine = OcrEngine.try_create_from_language(lang)
+        if engine is None:
+            engine = OcrEngine.try_create_from_user_profile_languages()
+        if engine is None:
+            return ""
+
+        result = await engine.recognize_async(bitmap)
+        if result is None:
+            return ""
+        return "\n".join(line.text for line in result.lines)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_run())
+    except Exception as e:
+        return f"[WinRT OCR 오류: {e}]"
+    finally:
+        loop.close()
+
+
+def parse_prescription_image(img_path: str) -> dict:
+    """
+    처방전출력 창 스크린샷에서 Windows OCR로 텍스트를 추출하고 필드를 파싱합니다.
+    parse_prescription_pdf()와 동일한 dict 구조를 반환합니다.
+    """
+    try:
+        import winsdk.windows.media.ocr  # noqa: F401
+    except ImportError:
+        return {"_error": "winsdk 미설치. pip install winsdk 실행 후 재시도하세요."}
+
+    if not img_path or not os.path.exists(img_path):
+        return {"_error": f"이미지 파일이 없습니다: {img_path}"}
+
+    full_text = _ocr_winrt(img_path)
+    if full_text.startswith("[WinRT OCR 오류"):
+        return {"_error": full_text}
+
+    result = {
+        "주민번호": "", "한의원명": "", "한의원연락처": "",
+        "한의사이름": "", "면허번호": "", "기관번호": "",
+        "발급연월일": "", "발급번호": "",
+        "기준처방명": "", "질병분류기호": "",
+        "일복용팩수": "", "용법": "",
+        "herbs": [],
+        "_raw_text": full_text,   # 디버그용
+    }
+
+    def _find(pattern, text=full_text, group=1):
+        m = re.search(pattern, text)
+        return m.group(group).strip() if m else ""
+
+    result["주민번호"]     = _find(r'(\d{6}-[0-9*]{7})')
+    result["발급연월일"]   = _find(r'발급\s*연월일[:\s]*(\d{4}[-. ]\d{2}[-. ]\d{2})')
+    if not result["발급연월일"]:
+        dates = re.findall(r'\d{4}[-. ]\d{2}[-. ]\d{2}', full_text)
+        result["발급연월일"] = re.sub(r'[ .]', '-', dates[-1]) if dates else ""
+    result["발급번호"]     = _find(r'발급\s*번호[:\s]*(-?\d{4,6})')
+    result["한의원명"]     = _find(r'(?:요양기관명|한의원명)[:\s]*([^\n\t]+)')
+    result["한의원연락처"] = _find(r'전화번호[:\s]*(0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4})')
+    result["기관번호"]     = _find(r'요양기관\s*기호[:\s]*([A-Z0-9\-]+)')
+    result["한의사이름"]   = _find(r'(?:면허|의료인)\s*성명[:\s]*([가-힣]{2,5})')
+    result["면허번호"]     = _find(r'면허\s*번호[:\s]*(\d+)')
+    result["기준처방명"]   = _find(r'기준처방명[:\s]*([^\n\t]+)')
+    # 질병분류기호: 명시적 패턴 우선, 없으면 "K30" 같은 상병코드 직접 탐색
+    result["질병분류기호"] = _find(r'(?:상병|질병)\s*(?:코드|기호|분류)[:\s]*([A-Z]\d{2,4}(?:\.\d+)?)')
+    if not result["질병분류기호"]:
+        result["질병분류기호"] = _find(r'\b([A-Z]\d{2,4}(?:\.\d+)?)\b')
+
+    m = re.search(r'1일\s*복용\s*팩\s*수[^\d]*(\d+)\s*팩', full_text)
+    result["일복용팩수"] = m.group(1) if m else ""
+    result["용법"] = _find(r'용\s*법[:\s]*([^\n]+)')
+
+    # ── 한약재 파싱 ─────────────────────────────────────────────────────────
+    # 처방전 형식: "숙지황 (3299H1AHM) 15 2 1" 또는 "숙지황 15 2 1 가감"
+    herb_re = re.compile(
+        r'^([가-힣]{2,10})\s*(?:\([^)]*\))?\s+'
+        r'([\d.]+)\s+\d+\s+\d+\s*(가감|가|감)?'
+    )
+    herb_list = []
+    for line in full_text.splitlines():
+        hm = herb_re.match(line.strip())
+        if hm:
+            herb_list.append({
+                "이름":      hm.group(1),
+                "1회투약량": hm.group(2),
+                "가감":      hm.group(3) or "",
+            })
+
+    result["herbs"] = herb_list
+    return result
+
+
 def step6_extract_prescription_info(wb_path: str, pdf_path: str, log_fn=None) -> dict:
     """
-    처방전 PDF를 파싱하여 가격표 시트에 입력합니다.
+    처방전 스크린샷 이미지를 OCR로 파싱하여 가격표 시트에 입력합니다.
       주민번호   → O9  (README 4번: O9)
       한의원명   → M6
       한의원연락처 → M7
@@ -629,8 +740,8 @@ def step6_extract_prescription_info(wb_path: str, pdf_path: str, log_fn=None) ->
         if log_fn:
             log_fn(m)
 
-    log("  처방전 PDF 파싱 중...")
-    fields = parse_prescription_pdf(pdf_path)
+    log("  처방전 이미지 OCR 파싱 중...")
+    fields = parse_prescription_image(pdf_path)
 
     if "_error" in fields:
         log(f"  경고: {fields['_error']}")
@@ -1116,14 +1227,14 @@ class InsuranceMedApp:
                                     prefill_contact=prefill_contact)
             self._log_msg("  ✓ 환자 정보 입력 완료")
 
-            # 5단계: 처방전 PDF 저장
-            self._log_msg("5단계: 처방전 PDF 저장 중...")
-            pdf_path = step5_save_prescription_pdf(search_dlg, log_fn=self._log_msg)
+            # 5단계: 처방전출력 창 스크린샷 캡처
+            self._log_msg("5단계: 처방전출력 창 캡처 중...")
+            presc_path = step5_save_prescription_pdf(search_dlg, log_fn=self._log_msg)
 
-            # 6단계: 처방전 PDF 파싱 → 가격표 입력
+            # 6단계: 처방전 OCR 파싱 → 가격표 입력
             self._log_msg("6단계: 처방전 정보 추출 중...")
             presc_fields = step6_extract_prescription_info(
-                wb_path, pdf_path, log_fn=self._log_msg
+                wb_path, presc_path, log_fn=self._log_msg
             )
             self._log_msg("  ✓ 처방전 정보 입력 완료")
 
