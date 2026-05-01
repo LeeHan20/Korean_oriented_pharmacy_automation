@@ -125,22 +125,73 @@ def cmd_get_herbs():
     def _rm(t):
         return _PAREN_RE.sub("", t).strip()
 
+    def _cell_text(item):
+        """DataItem 셀의 텍스트를 반환합니다."""
+        t = item.window_text().strip()
+        if t:
+            return t
+        try:
+            ch = item.children()
+            if ch:
+                return ch[0].window_text().strip()
+        except Exception:
+            pass
+        return ""
+
     win = _okosc_win()
     herbs = []
 
-    # 그리드가 여러 개일 때 첫 번째가 처방 목록, 그 이후가 약재 패널
-    grids = win.descendants(control_type="DataGrid")
-    target_grids = grids[1:] if len(grids) > 1 else grids
-    for grid in target_grids:
-        for item in grid.children(control_type="DataItem"):
-            cells = item.children()
-            if len(cells) >= 2:
-                name = _rm(cells[0].window_text())
-                dose = _rm(cells[1].window_text())
-                if name:
-                    herbs.append([name, dose])
-        if herbs:
+    # OKOSC 약재 목록은 DataGrid가 아닌 Table 타입으로 노출됨
+    # 각 DataItem = 1개 셀 (행이 아닌 셀 단위 flat 구조)
+    tables = win.descendants(control_type="Table")
+
+    # 가장 많은 DataItem을 가진 테이블 = 약재 목록 테이블
+    herb_table = None
+    max_items = 0
+    for table in tables:
+        try:
+            items = table.children(control_type="DataItem")
+            if len(items) > max_items:
+                max_items = len(items)
+                herb_table = table
+        except Exception:
+            pass
+
+    if herb_table is None or max_items < 9:
+        return {"status": "ok", "herbs": herbs}
+
+    all_items = herb_table.children(control_type="DataItem")
+    all_texts = [_cell_text(item) for item in all_items]
+
+    # 연속된 정수 '1' → '2' 패턴으로 데이터 시작 위치와 열 개수 자동 감지
+    start_idx = None
+    col_count = None
+    for i, t in enumerate(all_texts):
+        if t.strip() == "1":
+            for j in range(i + 1, min(i + 15, len(all_texts))):
+                if all_texts[j].strip() == "2":
+                    start_idx = i
+                    col_count = j - i
+                    break
+            if start_idx is not None:
+                break
+
+    if start_idx is None or col_count is None or col_count < 2:
+        return {"status": "ok", "herbs": herbs}
+
+    # 열 구조: [순번, 약재명, 1회투약량, 총용량, ?, 비고]
+    # 약재명 = col 1, 1회투약량 = col 2
+    for i in range(start_idx, len(all_texts), col_count):
+        row = all_texts[i: i + col_count]
+        if len(row) < 2:
             break
+        row_num = row[0].strip()
+        if not row_num.isdigit():
+            break  # 데이터 행 종료
+        name = row[1].strip()
+        dose = row[2].strip() if len(row) > 2 else ""
+        if name:
+            herbs.append([_rm(name), _rm(dose)])
 
     return {"status": "ok", "herbs": herbs}
 
@@ -204,7 +255,7 @@ def cmd_setup_search():
     """
     OKOSC 검색 조건 설정 및 검색 실행.
     - 검색기준: 진행상태
-    - 날짜: 7일 전 ~ 오늘
+    - 날짜: 30일 전 ~ 오늘
     - 진행상태 필터: 조제
     auto3.py에서 enter_delivery_memos / check_and_complete 루프 전에 1회 호출.
     """

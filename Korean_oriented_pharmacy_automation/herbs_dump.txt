@@ -1,0 +1,384 @@
+﻿  발견: hwnd=983378  title='GDI+ Window (OKOCSTJS(탕전실).exe)'  class=GDI+ Hook Window Class
+  발견: hwnd=724144  title='OKOCSTJS(탕전실)-옹기한약국'  class=WindowsForms10.Window.8.app.0.141b42a_r7_ad1
+
+대상 hwnd: 724144
+
+======================================================================
+  [WIN32] 전체 컨트롤 트리 덤프 (depth=8, win32 backend)
+======================================================================
+Control Identifiers:
+
+WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - 'OKOCSTJS(탕전실)-옹기한약국'    (L0, T0, R1917, B1037)
+['WindowsForms10.Window.8.app.0.141b42a_r7_ad1', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad1', 'OKOCSTJS(탕전실)-옹기한약국', 'WindowsForms10.Window.8.app.0.141b42a_r7_ad10', 'WindowsForms10.Window.8.app.0.141b42a_r7_ad11', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad10', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad11', 'OKOCSTJS(탕전실)-옹기한약국0', 'OKOCSTJS(탕전실)-옹기한약국1']
+child_window(title="OKOCSTJS(탕전실)-옹기한약국", auto_id="frmMain", control_type="OJH.OKChart.OKOCSTJS.frmMain")
+   | 
+   | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - '스캐너실행'    (L1629, T6, R1718, B33)
+   | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad12', '스캐너실행WindowsForms10.Window.8.app.0.141b42a_r7_ad1', '스캐너실행']
+   | child_window(title="스캐너실행", auto_id="ulBtnScanner", control_type="Infragistics.Win.Misc.UltraButton")
+   | 
+   | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - 'OK원격지원'    (L1717, T6, R1814, B33)
+   | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad13', 'OK원격지원', 'OK원격지원WindowsForms10.Window.8.app.0.141b42a_r7_ad1']
+   | child_window(title="OK원격지원", auto_id="ulBtnRemoteCall", control_type="Infragistics.Win.Misc.UltraButton")
+   | 
+   | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L7, T33, R1910, B1012)
+   | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad14', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad12']
+   | child_window(auto_id="Panel_Main", control_type="System.Windows.Forms.Panel")
+   |    | 
+   |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L7, T33, R1910, B1012)
+   |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad15', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad13']
+   |    | child_window(auto_id="ulTabMain", control_type="Infragistics.Win.UltraWinTabControl.UltraTabControl")
+   |    |    | 
+   |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L8, T64, R1909, B1011)
+   |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad16', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad14']
+   |    |    | child_window(auto_id="ulTabSharedMain", control_type="Infragistics.Win.UltraWinTabControl.UltraTabSharedControlsPage")
+   |    |    | 
+   |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L8, T64, R1909, B1011)
+   |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad17', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad15']
+   |    |    | child_window(auto_id="UltraTabPageControl_1", control_type="Infragistics.Win.UltraWinTabControl.UltraTabPageControl")
+   |    |    |    | 
+   |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L8, T64, R1909, B1011)
+   |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad18', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad16']
+   |    |    |    | child_window(auto_id="Panel_home", control_type="System.Windows.Forms.Panel")
+   |    |    |    |    | 
+   |    |    |    |    | Static - ''    (L8, T64, R1909, B65)
+   |    |    |    |    | ['Static', 'OKOCSTJS(탕전실)-옹기한약국Static', 'Static0', 'Static1', 'OKOCSTJS(탕전실)-옹기한약국Static0', 'OKOCSTJS(탕전실)-옹기한약국Static1']
+   |    |    |    |    | child_window(auto_id="Label_Div01", control_type="System.Windows.Forms.Label")
+   |    |    |    |    | 
+   |    |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad19', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad17']
+   |    |    |    |    | child_window(auto_id="WebBrsOKOCSTJSNotice", control_type="System.Windows.Forms.WebBrowser")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Shell Embedding - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell Embedding', 'Shell Embedding', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding0', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding1', 'Shell Embedding0', 'Shell Embedding1']
+   |    |    |    |    |    | child_window(class_name="Shell Embedding")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Shell Embedding - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell Embedding', 'Shell Embedding', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding0', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding1', 'Shell Embedding0', 'Shell Embedding1']
+   |    |    |    |    | child_window(class_name="Shell Embedding")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - 'OKOCSTJS(탕전실) 로그인'    (L844, T96, R1070, B122)
+   |    |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad110', 'OKOCSTJS(탕전실) 로그인WindowsForms10.Window.8.app.0.141b42a_r7_ad1', 'OKOCSTJS(탕전실) 로그인']
+   |    |    |    |    | child_window(title="OKOCSTJS(탕전실) 로그인", auto_id="ulLabel_LogIn", control_type="Infragistics.Win.Misc.UltraLabel")
+   |    |    |    | 
+   |    |    |    | Static - ''    (L8, T64, R1909, B65)
+   |    |    |    | ['Static', 'OKOCSTJS(탕전실)-옹기한약국Static', 'Static0', 'Static1', 'OKOCSTJS(탕전실)-옹기한약국Static0', 'OKOCSTJS(탕전실)-옹기한약국Static1']
+   |    |    |    | child_window(auto_id="Label_Div01", control_type="System.Windows.Forms.Label")
+   |    |    |    | 
+   |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad19', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad17']
+   |    |    |    | child_window(auto_id="WebBrsOKOCSTJSNotice", control_type="System.Windows.Forms.WebBrowser")
+   |    |    |    |    | 
+   |    |    |    |    | Shell Embedding - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell Embedding', 'Shell Embedding', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding0', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding1', 'Shell Embedding0', 'Shell Embedding1']
+   |    |    |    |    | child_window(class_name="Shell Embedding")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Shell Embedding - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell Embedding', 'Shell Embedding', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding0', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding1', 'Shell Embedding0', 'Shell Embedding1']
+   |    |    |    | child_window(class_name="Shell Embedding")
+   |    |    |    |    | 
+   |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - 'OKOCSTJS(탕전실) 로그인'    (L844, T96, R1070, B122)
+   |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad110', 'OKOCSTJS(탕전실) 로그인WindowsForms10.Window.8.app.0.141b42a_r7_ad1', 'OKOCSTJS(탕전실) 로그인']
+   |    |    |    | child_window(title="OKOCSTJS(탕전실) 로그인", auto_id="ulLabel_LogIn", control_type="Infragistics.Win.Misc.UltraLabel")
+   |    |    | 
+   |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L8, T64, R1909, B1011)
+   |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad18', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad16']
+   |    |    | child_window(auto_id="Panel_home", control_type="System.Windows.Forms.Panel")
+   |    |    |    | 
+   |    |    |    | Static - ''    (L8, T64, R1909, B65)
+   |    |    |    | ['Static', 'OKOCSTJS(탕전실)-옹기한약국Static', 'Static0', 'Static1', 'OKOCSTJS(탕전실)-옹기한약국Static0', 'OKOCSTJS(탕전실)-옹기한약국Static1']
+   |    |    |    | child_window(auto_id="Label_Div01", control_type="System.Windows.Forms.Label")
+   |    |    |    | 
+   |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad19', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad17']
+   |    |    |    | child_window(auto_id="WebBrsOKOCSTJSNotice", control_type="System.Windows.Forms.WebBrowser")
+   |    |    |    |    | 
+   |    |    |    |    | Shell Embedding - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell Embedding', 'Shell Embedding', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding0', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding1', 'Shell Embedding0', 'Shell Embedding1']
+   |    |    |    |    | child_window(class_name="Shell Embedding")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Shell Embedding - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell Embedding', 'Shell Embedding', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding0', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding1', 'Shell Embedding0', 'Shell Embedding1']
+   |    |    |    | child_window(class_name="Shell Embedding")
+   |    |    |    |    | 
+   |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - 'OKOCSTJS(탕전실) 로그인'    (L844, T96, R1070, B122)
+   |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad110', 'OKOCSTJS(탕전실) 로그인WindowsForms10.Window.8.app.0.141b42a_r7_ad1', 'OKOCSTJS(탕전실) 로그인']
+   |    |    |    | child_window(title="OKOCSTJS(탕전실) 로그인", auto_id="ulLabel_LogIn", control_type="Infragistics.Win.Misc.UltraLabel")
+   |    |    | 
+   |    |    | Static - ''    (L8, T64, R1909, B65)
+   |    |    | ['Static', 'OKOCSTJS(탕전실)-옹기한약국Static', 'Static0', 'Static1', 'OKOCSTJS(탕전실)-옹기한약국Static0', 'OKOCSTJS(탕전실)-옹기한약국Static1']
+   |    |    | child_window(auto_id="Label_Div01", control_type="System.Windows.Forms.Label")
+   |    |    | 
+   |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L19, T157, R1898, B996)
+   |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad19', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad17']
+   |    |    | child_window(auto_id="WebBrsOKOCSTJSNotice", control_type="System.Windows.Forms.WebBrowser")
+   |    |    |    | 
+   |    |    |    | Shell Embedding - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell Embedding', 'Shell Embedding', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding0', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding1', 'Shell Embedding0', 'Shell Embedding1']
+   |    |    |    | child_window(class_name="Shell Embedding")
+   |    |    |    |    | 
+   |    |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    | 
+   |    |    | Shell Embedding - ''    (L19, T157, R1898, B996)
+   |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell Embedding', 'Shell Embedding', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding0', 'OKOCSTJS(탕전실)-옹기한약국Shell Embedding1', 'Shell Embedding0', 'Shell Embedding1']
+   |    |    | child_window(class_name="Shell Embedding")
+   |    |    |    | 
+   |    |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    |    | 
+   |    |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    |    | 
+   |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    | 
+   |    |    | Shell DocObject View - ''    (L19, T157, R1898, B996)
+   |    |    | ['OKOCSTJS(탕전실)-옹기한약국Shell DocObject View', 'Shell DocObject View', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View0', 'OKOCSTJS(탕전실)-옹기한약국Shell DocObject View1', 'Shell DocObject View0', 'Shell DocObject View1']
+   |    |    | child_window(class_name="Shell DocObject View")
+   |    |    |    | 
+   |    |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    | 
+   |    |    | Internet Explorer_Server - ''    (L19, T157, R1898, B996)
+   |    |    | ['OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server', 'Internet Explorer_Server', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server0', 'OKOCSTJS(탕전실)-옹기한약국Internet Explorer_Server1', 'Internet Explorer_Server0', 'Internet Explorer_Server1']
+   |    |    | child_window(class_name="Internet Explorer_Server")
+   |    |    | 
+   |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - 'OKOCSTJS(탕전실) 로그인'    (L844, T96, R1070, B122)
+   |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad110', 'OKOCSTJS(탕전실) 로그인WindowsForms10.Window.8.app.0.141b42a_r7_ad1', 'OKOCSTJS(탕전실) 로그인']
+   |    |    | child_window(title="OKOCSTJS(탕전실) 로그인", auto_id="ulLabel_LogIn", control_type="Infragistics.Win.Misc.UltraLabel")
+   |    |    | 
+   |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L8, T64, R1909, B1011)
+   |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad111', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad18']
+   |    |    | child_window(auto_id="UltraTabPageControl_2", control_type="Infragistics.Win.UltraWinTabControl.UltraTabPageControl")
+   |    |    |    | 
+   |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L8, T64, R1909, B1011)
+   |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad112', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad19']
+   |    |    |    | child_window(auto_id="Panel_LogIn", control_type="System.Windows.Forms.Panel")
+   |    |    |    |    | 
+   |    |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L8, T64, R1909, B1011)
+   |    |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad113', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad110']
+   |    |    |    |    | child_window(auto_id="Panel_Main", control_type="System.Windows.Forms.Panel")
+   |    |    |    |    |    | 
+   |    |    |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - ''    (L788, T119, R1126, B329)
+   |    |    |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad114', 'OKOCSTJS(탕전실)-옹기한약국WindowsForms10.Window.8.app.0.141b42a_r7_ad111']
+   |    |    |    |    |    | child_window(auto_id="Panel_MainCenter01", control_type="System.Windows.Forms.Panel")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - '1K'    (L888, T251, R1026, B283)
+   |    |    |    |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad115', '1K', '1KWindowsForms10.Window.8.app.0.141b42a_r7_ad1']
+   |    |    |    |    |    |    | child_window(title="1K", auto_id="ulTxtPWD", control_type="Infragistics.Win.UltraWinEditors.UltraTextEditor")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | Edit - '1'    (L891, T260, R1025, B275)
+   |    |    |    |    |    |    | ['OKOCSTJS(탕전실)-옹기한약국Edit', 'Edit', 'OKOCSTJS(탕전실)-옹기한약국Edit0', 'OKOCSTJS(탕전실)-옹기한약국Edit1', 'Edit0', 'Edit1']
+   |    |    |    |    |    |    | child_window(title="1", auto_id="ulTxtPWD_EmbeddableTextBox", control_type="Infragistics.Win.EmbeddableTextBoxWithUIPermissions")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - '비밀번호'    (L815, T251, R889, B283)
+   |    |    |    |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad116', '비밀번호', '비밀번호WindowsForms10.Window.8.app.0.141b42a_r7_ad1']
+   |    |    |    |    |    |    | child_window(title="비밀번호", auto_id="UltraLabel3", control_type="Infragistics.Win.Misc.UltraLabel")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - '아이디'    (L815, T220, R889, B252)
+   |    |    |    |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad117', '아이디WindowsForms10.Window.8.app.0.141b42a_r7_ad1', '아이디']
+   |    |    |    |    |    |    | child_window(title="아이디", auto_id="UltraLabel2", control_type="Infragistics.Win.Misc.UltraLabel")
+   |    |    |    |    |    |    | 
+   |    |    |    |    |    |    | WindowsForms10.Window.8.app.0.141b42a_r7_ad1 - '탕전실'    (L815, T165, R889, B197)
+   |    |    |    |    |    |    | ['WindowsForms10.Window.8.app.0.141b42a_r7_ad118', '탕전실', '탕전실WindowsForms10.Window.8.app.0.141b42a_r7_ad1']
+   |    |    |    |    |    |    | child_window(title="탕전실", auto_id="UltraLabel1", control_type="Infragistics.Win.Misc.UltraLabel")
+python.exe : Traceback (most recent call last):
+위치 줄:1 문자:85
++ ... utomation"; & "C:\Users\COM\AppData\Local\Programs\Python\Python313-3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last) 
+   ::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\COM\Desktop\automation\Korean_oriented_pharmacy_automation\_de
+bug_herbs.py", line 56, in <module>
+    win32.print_control_identifiers(depth=8)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\COM\AppData\Local\Programs\Python\Python313-32\Lib\site-packag
+es\pywinauto\application.py", line 689, in print_control_identifiers
+    print_identifiers([this_ctrl, ])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "C:\Users\COM\AppData\Local\Programs\Python\Python313-32\Lib\site-packag
+es\pywinauto\application.py", line 685, in print_identifiers
+    print_identifiers(ctrl.children(), current_depth + 1, log_func)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\COM\AppData\Local\Programs\Python\Python313-32\Lib\site-packag
+es\pywinauto\application.py", line 685, in print_identifiers
+    print_identifiers(ctrl.children(), current_depth + 1, log_func)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\COM\AppData\Local\Programs\Python\Python313-32\Lib\site-packag
+es\pywinauto\application.py", line 685, in print_identifiers
+    print_identifiers(ctrl.children(), current_depth + 1, log_func)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  [Previous line repeated 4 more times]
+  File "C:\Users\COM\AppData\Local\Programs\Python\Python313-32\Lib\site-packag
+es\pywinauto\application.py", line 681, in print_identifiers
+    log_func(output)
+    ~~~~~~~~^^^^^^^^
+UnicodeEncodeError: 'cp949' codec can't encode character '\ue806' in position 1
+28: illegal multibyte sequence
