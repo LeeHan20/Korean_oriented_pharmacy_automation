@@ -35,9 +35,13 @@ import re
 import time
 import queue
 import threading
+import warnings
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 from datetime import datetime
+
+# openpyxl이 EMF 이미지를 읽지 못할 때 발생하는 경고 억제 (데이터에 영향 없음)
+warnings.filterwarnings("ignore", message=r".*\.emf.*", category=UserWarning)
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -83,6 +87,92 @@ _PAREN_RE = re.compile(r'\s*[\(（][^\)）]*[\)）]')
 def _remove_parens(text: str) -> str:
     """괄호 및 괄호 안의 내용을 제거합니다."""
     return _PAREN_RE.sub("", text).strip()
+
+
+def _safe_write(ws, cell_ref: str, value):
+    """병합셀이면 anchor(좌상단) 셀에 씁니다."""
+    from openpyxl.cell import MergedCell as _MC
+    cell = ws[cell_ref]
+    if isinstance(cell, _MC):
+        for mr in ws.merged_cells.ranges:
+            if cell_ref in mr:
+                ws.cell(row=mr.min_row, column=mr.min_col).value = value
+                return
+    else:
+        cell.value = value
+
+
+def _write_cells(wb_path: str, sheet_name: str, writes: dict,
+                 log_fn=None, row_writes: list = None):
+    """
+    시트에 셀 값을 쓁니다. 파일이 열려있으면 COM 폴백을 사용합니다.
+
+    writes:      {"O5": value, "O6": value, ...}  (cell_ref -> value)
+    row_writes:  [(row, col, value), ...]           (openpyxl 전용, 즉 COM에서는 writes로 변환)
+    """
+    def _log(m):
+        if log_fn:
+            log_fn(m)
+
+    abs_path = os.path.abspath(wb_path)
+
+    def _do_openpyxl():
+        wb = openpyxl.load_workbook(abs_path)
+        ws = wb[sheet_name]
+        ws.protection.sheet = False
+        for ref, val in (writes or {}).items():
+            _safe_write(ws, ref, val)
+        for row, col, val in (row_writes or []):
+            ws.cell(row=row, column=col).value = val
+        ws.protection.sheet = True
+        _log("  Excel 저장 중...")
+        wb.save(abs_path)
+
+    def _do_com():
+        import win32com.client
+        import pythoncom
+        pythoncom.CoInitialize()
+        try:
+            try:
+                xl = win32com.client.GetActiveObject("Excel.Application")
+            except Exception:
+                xl = win32com.client.Dispatch("Excel.Application")
+                xl.Visible = False
+                xl.DisplayAlerts = False
+
+            abs_lower = abs_path.lower()
+            wb_com = None
+            for item in xl.Workbooks:
+                if item.FullName.lower() == abs_lower:
+                    wb_com = item
+                    break
+            if wb_com is None:
+                wb_com = xl.Workbooks.Open(abs_path)
+
+            ws_com = wb_com.Worksheets(sheet_name)
+            if ws_com.ProtectContents:
+                ws_com.Unprotect()
+
+            for ref, val in (writes or {}).items():
+                ws_com.Range(ref).Value = val
+            for row, col, val in (row_writes or []):
+                # 열 번호를 Excel 열 문자로 변환 (A=1, B=2, ...)
+                col_letter = chr(ord('A') + col - 1) if col <= 26 else None
+                if col_letter:
+                    ws_com.Range(f"{col_letter}{row}").Value = val
+
+            ws_com.Protect()
+            wb_com.Save()
+            _log("  Excel 저장 완료 (COM 열린 파일 직접 저장)")
+        finally:
+            pythoncom.CoUninitialize()
+
+    _log("  Excel 파일 열기 중... (12MB 파일, 잠시 기다려주세요)")
+    try:
+        _do_openpyxl()
+    except PermissionError:
+        _log("  주의: 파일이 열려있어 COM으로 저장 시도 중...")
+        _do_com()
 
 
 def _unprotect_sheet(wb_path: str, sheet_name: str):
@@ -178,25 +268,40 @@ def _set_date_field(dlg, hint: str, date_str: str):
             pass
 
 
-def _call_worker(command: str, timeout: int = 30) -> dict:
+def _call_worker(command: str, timeout: int = 30,
+                 extra_args: list = None) -> dict:
     """
     okosc_worker.py를 32비트 Python(config.PYTHON32_PATH)으로 실행하고
     JSON 결과를 반환합니다.
+    extra_args: command 다음에 추가로 전달할 argv 목록 (예: PDF 경로)
     """
     import subprocess
     import json as _json
 
     worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "okosc_worker.py")
     try:
+        import os as _os
+        env = _os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        cmd_list = [config.PYTHON32_PATH, worker_path, command] + (extra_args or [])
         proc = subprocess.run(
-            [config.PYTHON32_PATH, worker_path, command],
+            cmd_list,
             capture_output=True,
             timeout=timeout,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            env=env,
         )
         out = proc.stdout.decode("utf-8", errors="replace").strip()
+        err = proc.stderr.decode("utf-8", errors="replace").strip()
+        if err:
+            import sys as _sys
+            try:
+                _sys.stderr.buffer.write(err.encode("utf-8", errors="replace") + b"\n")
+                _sys.stderr.buffer.flush()
+            except Exception:
+                print(err, file=_sys.stderr, flush=True)
         if not out:
-            err = proc.stderr.decode("utf-8", errors="replace").strip()
             return {"status": "error", "message": err or "worker 출력 없음"}
         return _json.loads(out)
     except subprocess.TimeoutExpired:
@@ -231,9 +336,11 @@ def step1_select_insurance_row(log_fn=None) -> dict:
     okosc_win = utils.find_okosc_app()
 
     return {
-        "search_dlg": okosc_win,
-        "row_idx":    result.get("row_idx", 0),
-        "row_text":   result.get("row_text", ""),
+        "search_dlg":      okosc_win,
+        "row_idx":         result.get("row_idx", 0),
+        "row_text":        result.get("row_text", ""),
+        "patient_name":    result.get("patient_name", ""),
+        "patient_contact": result.get("patient_contact", ""),
     }
 
 
@@ -266,18 +373,10 @@ def step2_fill_price_sheet(wb_path: str, search_dlg, log_fn=None) -> list:
     log(f"  약재 {len(herbs)}개 파싱 완료")
 
     # ── 가격표 시트 B/C열 12행~에 기입 ──────────────────────────────────
-    _unprotect_sheet(wb_path, SHEET_PRICE)
-    try:
-        wb = openpyxl.load_workbook(wb_path)
-        ws = wb[SHEET_PRICE]
-        for i, (name, dose) in enumerate(herbs):
-            r = 12 + i
-            ws.cell(row=r, column=2).value = name   # B열
-            ws.cell(row=r, column=3).value = dose   # C열
-        wb.save(wb_path)
-        log(f"  가격표 B/C열 {len(herbs)}행 기입 완료 (12~{11 + len(herbs)}행)")
-    finally:
-        _protect_sheet(wb_path, SHEET_PRICE)
+    rw = [(13 + i, 2, name) for i, (name, _) in enumerate(herbs)] + \
+         [(13 + i, 3, dose) for i, (_, dose) in enumerate(herbs)]
+    _write_cells(wb_path, SHEET_PRICE, {}, log_fn=log_fn, row_writes=rw)
+    log(f"  가격표 B/C열 {len(herbs)}행 기입 완료 (13~{12 + len(herbs)}행)")
 
     return herbs
 
@@ -318,206 +417,256 @@ def step3_check_origin(wb_path: str, herbs: list, log_fn=None) -> bool:
     )
 
 
-def step4_fill_patient_info(wb_path: str, search_dlg, log_fn=None):
+def step4_fill_patient_info(wb_path: str, search_dlg, log_fn=None,
+                             prefill_name: str = "", prefill_contact: str = ""):
     """
     OKOSC에서 환자명/연락처/주소를 파싱하여
     가격표 시트 O6(환자명), O7(연락처), O5(주소)에 입력합니다.
-    32비트 worker를 통해 UIA 접근합니다.
+
+    prefill_name/prefill_contact: step1에서 main grid DataItems에서 미리 수집한 값.
+    주소는 32비트 worker get_patient (Table[4] item[32])에서 가져옵니다.
     """
     def log(m):
         if log_fn:
             log_fn(m)
 
-    patient_name = contact = address = ""
+    patient_name = prefill_name
+    contact      = prefill_contact
+    address      = ""
 
     log("  32비트 worker로 환자 정보 파싱 중...")
     res = _call_worker("get_patient")
     if res.get("status") == "ok":
-        patient_name = res.get("name", "")
-        contact      = res.get("contact", "")
-        address      = res.get("address", "")
+        address = res.get("address", "")
+        if not patient_name:
+            patient_name = res.get("name", "")
+        if not contact:
+            contact = res.get("contact", "")
+        clinic_name    = res.get("clinic_name", "")
+        clinic_contact = res.get("clinic_contact", "")
     else:
         log(f"  경고: {res.get('message')}")
+        clinic_name = clinic_contact = ""
 
     log(f"  환자명: {patient_name}, 연락처: {contact}, "
         f"주소: {address[:20] + '...' if len(address) > 20 else address}")
+    if clinic_name:
+        log(f"  한의원명: {clinic_name}, 한의원전화: {clinic_contact}")
 
-    _unprotect_sheet(wb_path, SHEET_PRICE)
-    try:
-        wb = openpyxl.load_workbook(wb_path)
-        ws = wb[SHEET_PRICE]
-        ws["O6"] = patient_name
-        ws["O7"] = contact
-        ws["O5"] = address
-        wb.save(wb_path)
-        log("  환자 정보 입력 완료 (O5/O6/O7)")
-    finally:
-        _protect_sheet(wb_path, SHEET_PRICE)
+    writes = {"O6": patient_name, "O7": contact, "O5": address}
+    if clinic_name:
+        writes["M6"] = clinic_name
+    if clinic_contact:
+        writes["M7"] = clinic_contact
+    _write_cells(wb_path, SHEET_PRICE, writes, log_fn=log_fn)
+    log("  환자 정보 입력 완료 (O5/O6/O7)")
 
 
-def step5_open_prescription(search_dlg, log_fn=None):
+def step5_save_prescription_pdf(search_dlg, log_fn=None) -> str:
     """
-    OKOSC 출력 → 첩약보험(처방전) → 인쇄를 클릭합니다.
-    반환: 처방전 pywinauto 창 또는 None
-
-    TODO: OKOSC 출력 메뉴 구조 확인 필요.
+    OKOSC 출력 → PDF저장 클릭하여 처방전 PDF를 저장하고 경로를 반환합니다.
+    반환: PDF 파일 경로 (str) 또는 "" (실패 시)
     """
-    from pywinauto import Desktop
-
     def log(m):
         if log_fn:
             log_fn(m)
 
-    # ── 출력 메뉴 클릭 ───────────────────────────────────────────────────
-    # TODO: 실제 메뉴/버튼 이름으로 수정 필요
-    try:
-        search_dlg.child_window(
-            title_re=".*출력.*", control_type="Button"
-        ).click_input()
-        time.sleep(0.5)
-        search_dlg.child_window(
-            title_re=".*첩약보험.*처방전.*"
-        ).click_input()
-        time.sleep(0.5)
-        search_dlg.child_window(
-            title_re=".*인쇄.*", control_type="Button"
-        ).click_input()
-        time.sleep(1.5)
-    except Exception as e:
-        log(f"  경고: 처방전 인쇄 클릭 실패 ({e}). TODO: 컨트롤 이름 확인 필요")
+    pdf_path = os.path.join(os.path.expanduser("~"), "Downloads",
+                            f"presc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
 
-    # ── 처방전 창 찾기 ───────────────────────────────────────────────────
-    presc_win = None
-    try:
-        presc_win = Desktop(backend="uia").window(title_re=".*처방전.*|.*첩약.*")
-        presc_win.wait("visible", timeout=8)
-        log("  처방전 창 열림")
-    except Exception:
-        log("  경고: 처방전 창을 찾지 못함 (TODO: 창 제목 확인 필요)")
+    log("  32비트 worker로 처방전 PDF 저장 중...")
+    res = _call_worker("save_pdf", extra_args=[pdf_path], timeout=40)
+    if res.get("status") != "ok":
+        log(f"  경고: PDF 저장 실패 - {res.get('message')}")
+        return ""
 
-    return presc_win
+    actual_path = res.get("pdf_path", pdf_path)
+    log(f"  처방전 PDF 저장 완료: {os.path.basename(actual_path)}")
+    return actual_path
 
 
-def step6_extract_prescription_info(wb_path: str, presc_win, log_fn=None) -> dict:
+def parse_prescription_pdf(pdf_path: str) -> dict:
     """
-    처방전 창에서 각종 정보를 추출하여 가격표 시트에 입력합니다.
-      주민번호   → O8
+    처방전 PDF 텍스트를 추출하고 필요한 필드를 파싱합니다.
+
+    반환 dict 키:
+      주민번호, 한의원명, 한의원연락처, 한의사이름, 면허번호, 기관번호,
+      발급연월일, 발급번호,
+      기준처방명, 질병분류기호,
+      일복용팩수, 용법,
+      herbs: [{"이름": str, "1회투약량": str, "가감": str}, ...]
+    """
+    try:
+        import pdfplumber
+    except ImportError:
+        return {"_error": "pdfplumber 미설치. pip install pdfplumber 실행 후 재시도하세요."}
+
+    if not pdf_path or not os.path.exists(pdf_path):
+        return {"_error": f"PDF 파일이 없습니다: {pdf_path}"}
+
+    full_text = ""
+    tables_raw = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            t = page.extract_text() or ""
+            full_text += t + "\n"
+            for tbl in page.extract_tables():
+                tables_raw.append(tbl)
+
+    result = {
+        "주민번호": "", "한의원명": "", "한의원연락처": "",
+        "한의사이름": "", "면허번호": "", "기관번호": "",
+        "발급연월일": "", "발급번호": "",
+        "기준처방명": "", "질병분류기호": "",
+        "일복용팩수": "", "용법": "",
+        "herbs": [],
+    }
+
+    # ── 정규식 파싱 ──────────────────────────────────────────────────────────
+    def _find(pattern, text=full_text, group=1):
+        m = re.search(pattern, text)
+        return m.group(group).strip() if m else ""
+
+    result["주민번호"]     = _find(r'(\d{6}-[0-9*]{7})')
+    result["발급연월일"]   = _find(r'발급\s*연월일[:\s]*(\d{4}-\d{2}-\d{2})')
+    if not result["발급연월일"]:
+        dates = re.findall(r'\d{4}-\d{2}-\d{2}', full_text)
+        result["발급연월일"] = dates[-1] if dates else ""
+    result["발급번호"]     = _find(r'발급\s*번호[:\s]*(-\d{4,6}|-?\d{4,6})')
+    result["한의원명"]     = _find(r'요양기관명[:\s]*([^\n\t]+)')
+    if not result["한의원명"]:
+        result["한의원명"] = _find(r'한의원명[:\s]*([^\n\t]+)')
+    result["한의원연락처"] = _find(r'전화번호[:\s]*(0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4})')
+    result["기관번호"]     = _find(r'요양기관\s*기호[:\s]*([A-Z0-9\-]+)')
+    result["한의사이름"]   = _find(r'면허\s*(?:의료인\s*)?성명[:\s]*([가-힣]{2,5})')
+    if not result["한의사이름"]:
+        result["한의사이름"] = _find(r'한의사\s*성명[:\s]*([가-힣]{2,5})')
+    result["면허번호"]     = _find(r'면허\s*번호[:\s]*(\d+)')
+    result["기준처방명"]   = _find(r'기준처방명[:\s]*([^\n\t]+)')
+    result["질병분류기호"] = _find(r'상병\s*(?:코드|기호|분류)[:\s]*([A-Z]\d{2,4}(?:\.\d+)?)')
+    if not result["질병분류기호"]:
+        result["질병분류기호"] = _find(r'질병\s*분류\s*기호[:\s]*([A-Z]\d{2,4}(?:\.\d+)?)')
+
+    # 1일복용팩수: "1일복용팩수 (n 팩)" 또는 "n팩/일"
+    m = re.search(r'1일\s*복용\s*팩\s*수[^\d]*(\d+)\s*팩', full_text)
+    result["일복용팩수"] = m.group(1) if m else ""
+
+    result["용법"] = _find(r'용\s*법[:\s]*([^\n]+)')
+
+    # ── 한약재 테이블 파싱 ───────────────────────────────────────────────────
+    # 테이블에서 한약재명칭및코드 / 1회투약량 / 가감 열 찾기
+    herb_list = []
+    HERB_HEADERS = {"한약재", "명칭", "코드", "한약"}
+    DOSE_HEADERS = {"1회", "투약량", "용량"}
+    ADDED_HEADERS = {"가감", "가", "감"}
+
+    for tbl in tables_raw:
+        if not tbl:
+            continue
+        # 헤더 행 찾기
+        header_row_idx = None
+        herb_col = dose_col = added_col = None
+        for ri, row in enumerate(tbl):
+            cells = [str(c or "").strip() for c in row]
+            matches = {"herb": None, "dose": None, "added": None}
+            for ci, c in enumerate(cells):
+                if any(h in c for h in HERB_HEADERS):
+                    matches["herb"] = ci
+                if any(h in c for h in DOSE_HEADERS):
+                    matches["dose"] = ci
+                if any(h in c for h in ADDED_HEADERS):
+                    matches["added"] = ci
+            if matches["herb"] is not None:
+                header_row_idx = ri
+                herb_col, dose_col, added_col = matches["herb"], matches["dose"], matches["added"]
+                break
+
+        if header_row_idx is None:
+            continue
+
+        for row in tbl[header_row_idx + 1:]:
+            cells = [str(c or "").strip() for c in row]
+            if not cells:
+                continue
+            herb_raw = cells[herb_col] if herb_col is not None and herb_col < len(cells) else ""
+            # 한약재명칭및코드에서 이름만 추출 (코드 제거: 영숫자 혼합 제거)
+            herb_name = re.sub(r'\s*[A-Za-z0-9]+\s*$', '', herb_raw).strip()
+            herb_name = re.sub(r'\([^)]*\)', '', herb_name).strip()  # 괄호 제거
+            if not herb_name or not re.search(r'[가-힣]', herb_name):
+                continue
+            dose  = cells[dose_col]  if dose_col  is not None and dose_col  < len(cells) else ""
+            added = cells[added_col] if added_col is not None and added_col < len(cells) else ""
+            herb_list.append({"이름": herb_name, "1회투약량": dose, "가감": added})
+
+    # 테이블 파싱 실패 시 텍스트 기반 fallback
+    if not herb_list:
+        for line in full_text.splitlines():
+            # "우슬 8" / "우슬(동우당/국산) 8" 형식
+            m = re.match(r'^([가-힣]{2,10}(?:\([^)]*\))?)\s+([\d.]+)\s*(가감|가|감)?', line.strip())
+            if m:
+                name = re.sub(r'\([^)]*\)', '', m.group(1)).strip()
+                herb_list.append({"이름": name, "1회투약량": m.group(2), "가감": m.group(3) or ""})
+
+    result["herbs"] = herb_list
+    return result
+
+
+def step6_extract_prescription_info(wb_path: str, pdf_path: str, log_fn=None) -> dict:
+    """
+    처방전 PDF를 파싱하여 가격표 시트에 입력합니다.
+      주민번호   → O9  (README 4번: O9)
       한의원명   → M6
       한의원연락처 → M7
       한의사이름 → M8
       면허번호   → M9
       기관번호   → M10
-      발급연월일 → O10  (형식: xxxx-xx-xx)
-      발급번호   → P10  (형식: -xxxxx)
+      발급연월일 → O10
+      발급번호   → P10
 
-    TODO: 처방전 창 컨트롤 이름 확인 필요.
+    반환: 파싱된 처방전 정보 dict (후속 단계에서 재사용)
     """
     def log(m):
         if log_fn:
             log_fn(m)
 
-    fields = {
-        "주민번호": "", "한의원명": "", "한의원연락처": "",
-        "한의사이름": "", "면허번호": "", "기관번호": "",
-        "발급연월일": "", "발급번호": "",
-    }
+    log("  처방전 PDF 파싱 중...")
+    fields = parse_prescription_pdf(pdf_path)
 
-    if presc_win is None:
-        log("  경고: 처방전 창이 없어 정보 추출을 건너뜁니다.")
+    if "_error" in fields:
+        log(f"  경고: {fields['_error']}")
         return fields
 
-    # 창 전체 텍스트 수집
-    all_text = ""
-    try:
-        all_text = "\n".join(c.window_text() for c in presc_win.descendants())
-    except Exception:
-        pass
+    log(f"  주민번호={fields['주민번호']!r}  한의원={fields['한의원명']!r}")
+    log(f"  발급일={fields['발급연월일']!r}  발급번호={fields['발급번호']!r}")
+    log(f"  기준처방명={fields['기준처방명']!r}  질병분류={fields['질병분류기호']!r}")
+    log(f"  한약재 {len(fields['herbs'])}개 파싱됨")
 
-    # 정규식으로 주민번호·발급일·발급번호 추출
-    m = re.search(r'\d{6}-\d{7}', all_text)
-    if m:
-        fields["주민번호"] = m.group()
-
-    dates = re.findall(r'\d{4}-\d{2}-\d{2}', all_text)
-    if dates:
-        fields["발급연월일"] = dates[-1]
-
-    m = re.search(r'-\d{5}', all_text)
-    if m:
-        fields["발급번호"] = m.group()
-
-    # TODO: 한의원명, 연락처, 한의사명, 면허번호, 기관번호 파싱 (컨트롤 확인 필요)
-    _label_map = {
-        "한의원명":    ".*한의원.*명.*|.*기관.*명.*",
-        "한의원연락처": ".*한의원.*연락처.*|.*기관.*전화.*",
-        "한의사이름":  ".*한의사.*|.*의사.*명.*",
-        "면허번호":    ".*면허.*번호.*",
-        "기관번호":    ".*기관.*번호.*",
-    }
-    for key, pattern in _label_map.items():
-        try:
-            ctrl = presc_win.child_window(title_re=pattern, control_type="Edit")
-            fields[key] = ctrl.window_text().strip()
-        except Exception:
-            pass
-
-    log(f"  처방전 정보: 주민번호={fields['주민번호']}, "
-        f"발급일={fields['발급연월일']}, 발급번호={fields['발급번호']}")
-
-    _unprotect_sheet(wb_path, SHEET_PRICE)
-    try:
-        wb = openpyxl.load_workbook(wb_path)
-        ws = wb[SHEET_PRICE]
-        ws["O8"]  = fields["주민번호"]
-        ws["M6"]  = fields["한의원명"]
-        ws["M7"]  = fields["한의원연락처"]
-        ws["M8"]  = fields["한의사이름"]
-        ws["M9"]  = fields["면허번호"]
-        ws["M10"] = fields["기관번호"]
-        ws["O10"] = fields["발급연월일"]
-        ws["P10"] = fields["발급번호"]
-        wb.save(wb_path)
-        log("  처방전 정보 가격표 입력 완료")
-    finally:
-        _protect_sheet(wb_path, SHEET_PRICE)
+    _write_cells(wb_path, SHEET_PRICE, {
+        "O9":  fields["주민번호"],
+        "M6":  fields["한의원명"],
+        "M7":  fields["한의원연락처"],
+        "M8":  fields["한의사이름"],
+        "M9":  fields["면허번호"],
+        "M10": fields["기관번호"],
+        "O10": fields["발급연월일"],
+        "P10": fields["발급번호"],
+    }, log_fn=log_fn)
+    log("  처방전 정보 가격표 입력 완료 (O9/M6~M10/O10/P10)")
 
     return fields
 
 
-def step7_select_prescription_name(wb_path: str, presc_win, log_fn=None):
+def step7_select_prescription_name(wb_path: str, presc_fields: dict, log_fn=None):
     """
-    처방전 기준처방명(string + alpha + int)에서 string 부분을 추출하여
-    가격표 시트의 해당 항목을 선택합니다.
-
-    TODO: 처방전 기준처방명 컨트롤 및 가격표 드롭다운 셀/위치 확인 필요.
+    PDF 파싱된 기준처방명에서 한글 부분을 추출하여 가격표 B5에 입력합니다.
     """
     def log(m):
         if log_fn:
             log_fn(m)
 
-    if presc_win is None:
-        log("  경고: 처방전 창이 없어 기준처방명 선택을 건너뜁니다.")
-        return
-
-    presc_name_raw = ""
-    try:
-        ctrl = presc_win.child_window(
-            title_re=".*기준처방.*|.*처방명.*", control_type="Edit"
-        )
-        presc_name_raw = ctrl.window_text().strip()
-    except Exception:
-        # 전체 텍스트에서 패턴 검색 (한글 + 알파벳 + 숫자)
-        try:
-            texts = [c.window_text() for c in presc_win.descendants()]
-            for t in texts:
-                if re.search(r'[가-힣]+\s+[A-Za-z]\s*\d+', t):
-                    presc_name_raw = t.strip()
-                    break
-        except Exception:
-            pass
-
+    presc_name_raw = (presc_fields or {}).get("기준처방명", "")
     if not presc_name_raw:
-        log("  경고: 기준처방명을 찾지 못함 (TODO: 컨트롤 확인 필요)")
+        log("  경고: 기준처방명을 처방전 PDF에서 찾지 못함")
         return
 
     m = re.match(r'([가-힣]+)', presc_name_raw)
@@ -527,48 +676,26 @@ def step7_select_prescription_name(wb_path: str, presc_win, log_fn=None):
 
     presc_str = m.group(1)
     log(f"  기준처방명: '{presc_name_raw}' → 검색 키: '{presc_str}'")
-
-    # TODO: 가격표 드롭다운에서 presc_str에 해당하는 처방명 선택
-    # 가격표 드롭다운 셀 위치를 확인한 후 아래 코드를 구현하세요.
-    log(f"  TODO: 가격표에서 '{presc_str}' 해당 처방명 선택 미구현")
+    _write_cells(wb_path, SHEET_PRICE, {"B5": presc_str}, log_fn=log_fn)
+    log(f"  B5 기준처방명 입력 완료: {presc_str}")
 
 
-def step8_select_disease_code(wb_path: str, presc_win, log_fn=None):
+def step8_select_disease_code(wb_path: str, presc_fields: dict, log_fn=None):
     """
-    처방전의 질병 분류기호를 파싱하여 가격표 F5에 입력합니다.
-
-    TODO: 처방전 질병분류기호 컨트롤 확인 필요.
+    PDF 파싱된 질병분류기호를 가격표 F5에 입력합니다.
     """
     def log(m):
         if log_fn:
             log_fn(m)
 
-    if presc_win is None:
-        log("  경고: 처방전 창이 없어 질병분류기호 선택을 건너뜁니다.")
-        return
-
-    disease_code = ""
-    try:
-        ctrl = presc_win.child_window(
-            title_re=".*질병.*분류.*|.*상병.*코드.*", control_type="Edit"
-        )
-        disease_code = ctrl.window_text().strip()
-    except Exception:
-        log("  경고: 질병분류기호 파싱 실패 (TODO: 컨트롤 확인 필요)")
-
+    disease_code = (presc_fields or {}).get("질병분류기호", "")
     if not disease_code:
+        log("  경고: 질병분류기호를 처방전 PDF에서 찾지 못함")
         return
 
     log(f"  질병분류기호: {disease_code}")
-    _unprotect_sheet(wb_path, SHEET_PRICE)
-    try:
-        wb = openpyxl.load_workbook(wb_path)
-        ws = wb[SHEET_PRICE]
-        ws["F5"] = disease_code
-        wb.save(wb_path)
-        log(f"  F5 질병분류기호 입력 완료: {disease_code}")
-    finally:
-        _protect_sheet(wb_path, SHEET_PRICE)
+    _write_cells(wb_path, SHEET_PRICE, {"F5": disease_code}, log_fn=log_fn)
+    log(f"  F5 질병분류기호 입력 완료: {disease_code}")
 
 
 def step9_user_misc_input(log_fn=None) -> str:
@@ -588,51 +715,20 @@ def step9_user_misc_input(log_fn=None) -> str:
     return result or ""
 
 
-def step10_fill_dosage_info(wb_path: str, presc_win, log_fn=None):
+def step10_fill_dosage_info(wb_path: str, presc_fields: dict, log_fn=None):
     """
-    처방전 조제시 참고사항에서 1일복용팩수 → 가격표 T9,
-    용법 → 가격표 T10에 입력합니다.
-
-    TODO: 처방전 조제시 참고사항 컨트롤 확인 필요.
+    PDF 파싱된 1일복용팩수 → 가격표 T9, 용법 → T10에 입력합니다.
     """
     def log(m):
         if log_fn:
             log_fn(m)
 
-    if presc_win is None:
-        log("  경고: 처방전 창이 없어 복용팩수/용법 파싱을 건너뜁니다.")
-        return
+    pack_count = (presc_fields or {}).get("일복용팩수", "")
+    usage_text  = (presc_fields or {}).get("용법", "")
 
-    pack_text = usage_text = ""
-
-    # 1일복용팩수: "1일복용팩수 (n 팩)" 형식
-    _rx_pack = re.compile(r'1일복용팩수\s*[\(（]\s*\d+\s*팩\s*[\)）]')
-    try:
-        full_text = "\n".join(c.window_text() for c in presc_win.descendants())
-        m = _rx_pack.search(full_text)
-        if m:
-            pack_text = m.group()
-    except Exception:
-        pass
-
-    try:
-        ctrl = presc_win.child_window(title_re=".*용법.*", control_type="Edit")
-        usage_text = ctrl.window_text().strip()
-    except Exception:
-        pass
-
-    log(f"  1일복용팩수: {pack_text}, 용법: {usage_text[:30] if usage_text else ''}")
-
-    _unprotect_sheet(wb_path, SHEET_PRICE)
-    try:
-        wb = openpyxl.load_workbook(wb_path)
-        ws = wb[SHEET_PRICE]
-        ws["T9"]  = pack_text
-        ws["T10"] = usage_text
-        wb.save(wb_path)
-        log("  T9/T10 입력 완료")
-    finally:
-        _protect_sheet(wb_path, SHEET_PRICE)
+    log(f"  1일복용팩수: {pack_count!r},  용법: {repr(usage_text[:30]) if usage_text else ''}")
+    _write_cells(wb_path, SHEET_PRICE, {"T9": pack_count, "T10": usage_text}, log_fn=log_fn)
+    log("  T9/T10 입력 완료")
 
 
 def step11_fill_okosc_dosage(wb_path: str, search_dlg, log_fn=None):
@@ -665,54 +761,38 @@ def step11_fill_okosc_dosage(wb_path: str, search_dlg, log_fn=None):
         _protect_sheet(wb_path, SHEET_PRICE)
 
 
-def step12_14_fill_herb_details(wb_path: str, presc_win, log_fn=None) -> list:
+def step12_14_fill_herb_details(wb_path: str, presc_fields: dict, log_fn=None) -> list:
     """
-    처방전 한약재 세부사항에서 요양급여비용명세서_양식 시트를 채웁니다.
+    PDF 파싱된 한약재 목록으로 요양급여비용명세서_양식 시트를 채웁니다.
       한약재명칭및코드 → U16~  (열 21)
       1회투약량        → Y16~  (열 25, 가감에 "감" 있으면 음수)
-      1일투여횟수      → Z16~  (열 26)
-      총투약횟수       → AA16~ (열 27)
       가감             → AF16~ (열 32)
-    반환: [(약재명, 1회투약량, 1일투여횟수, 총투약횟수, 가감), ...]
-
-    TODO: 처방전 한약재 세부사항 그리드 컨트롤 확인 필요.
+    반환: [(약재명, 1회투약량, "", "", 가감), ...]
     """
     def log(m):
         if log_fn:
             log_fn(m)
 
     herb_details = []
+    herbs = (presc_fields or {}).get("herbs", [])
 
-    if presc_win is None:
-        log("  경고: 처방전 창이 없어 한약재 세부사항 파싱을 건너뜁니다.")
+    if not herbs:
+        log("  경고: PDF에서 파싱된 한약재가 없습니다.")
         return herb_details
 
-    # TODO: 처방전 한약재 세부사항 그리드 이름 확인 필요
-    # 열 순서: 한약재명칭및코드, 1회투약량, 1일투여횟수, 총투약횟수, 가감 (순서 확인 필요)
-    try:
-        herb_grid = presc_win.child_window(
-            title_re=".*한약재.*|.*세부.*", control_type="DataGrid"
-        )
-        for item in herb_grid.children(control_type="DataItem"):
-            cells = item.children()
-            if len(cells) >= 5:
-                name      = cells[0].window_text().strip()
-                dose_once = cells[1].window_text().strip()
-                freq_day  = cells[2].window_text().strip()
-                total     = cells[3].window_text().strip()
-                addition  = cells[4].window_text().strip()
-                if name:
-                    herb_details.append((name, dose_once, freq_day, total, addition))
-    except Exception:
-        log("  경고: 한약재 세부사항 파싱 실패 (TODO: 그리드 컨트롤 이름 확인 필요)")
+    for h in herbs:
+        herb_details.append((
+            h.get("이름", ""),
+            h.get("1회투약량", ""),
+            "",   # 1일투여횟수 - PDF에 없으면 공란
+            "",   # 총투약횟수   - PDF에 없으면 공란
+            h.get("가감", ""),
+        ))
 
-    if not herb_details:
-        log("  경고: 파싱된 한약재 세부사항이 없습니다.")
-        return herb_details
+    log(f"  한약재 세부사항 {len(herb_details)}개 파싱 완료 (PDF 기반)")
 
-    log(f"  한약재 세부사항 {len(herb_details)}개 파싱 완료")
+    _write_cells(wb_path, SHEET_YOYANG, {}, log_fn=log_fn)  # sheet 존재 확인용 no-op
 
-    _unprotect_sheet(wb_path, SHEET_YOYANG)
     try:
         wb = openpyxl.load_workbook(wb_path)
         ws = wb[SHEET_YOYANG]
@@ -732,8 +812,8 @@ def step12_14_fill_herb_details(wb_path: str, presc_win, log_fn=None) -> list:
             ws.cell(row=r, column=YY_ADD_COL).value   = addition  # AF열
         wb.save(wb_path)
         log("  요양급여비용명세서_양식 U/Y/Z/AA/AF열 입력 완료")
-    finally:
-        _protect_sheet(wb_path, SHEET_YOYANG)
+    except Exception as e:
+        log(f"  경고: 한약재 세부사항 Excel 저장 실패: {e}")
 
     return herb_details
 
@@ -1008,8 +1088,11 @@ class InsuranceMedApp:
             # 1단계: OKOSC 보험 행 선택
             self._log_msg("1단계: OKOSC 보험 행 선택 중...")
             result = step1_select_insurance_row(log_fn=self._log_msg)
-            search_dlg = result["search_dlg"]
-            self._log_msg(f"  ✓ 보험 행 선택 완료")
+            search_dlg      = result["search_dlg"]
+            prefill_name    = result.get("patient_name", "")
+            prefill_contact = result.get("patient_contact", "")
+            self._log_msg(f"  ✓ 보험 행 선택 완료 "
+                          f"(환자명={prefill_name!r}, 전화={prefill_contact!r})")
 
             # 2단계: 약재명/용량 → 가격표 B/C열 12행~
             self._log_msg("2단계: 가격표 약재명/용량 입력 중...")
@@ -1028,30 +1111,32 @@ class InsuranceMedApp:
 
             # 4단계: 환자 정보 → O5/O6/O7
             self._log_msg("4단계: 환자 정보 입력 중...")
-            step4_fill_patient_info(wb_path, search_dlg, log_fn=self._log_msg)
+            step4_fill_patient_info(wb_path, search_dlg, log_fn=self._log_msg,
+                                    prefill_name=prefill_name,
+                                    prefill_contact=prefill_contact)
             self._log_msg("  ✓ 환자 정보 입력 완료")
 
-            # 5단계: 처방전 열기
-            self._log_msg("5단계: 처방전 창 열기 중...")
-            presc_win = step5_open_prescription(search_dlg, log_fn=self._log_msg)
+            # 5단계: 처방전 PDF 저장
+            self._log_msg("5단계: 처방전 PDF 저장 중...")
+            pdf_path = step5_save_prescription_pdf(search_dlg, log_fn=self._log_msg)
 
-            # 6단계: 처방전 정보 추출
+            # 6단계: 처방전 PDF 파싱 → 가격표 입력
             self._log_msg("6단계: 처방전 정보 추출 중...")
-            step6_extract_prescription_info(
-                wb_path, presc_win, log_fn=self._log_msg
+            presc_fields = step6_extract_prescription_info(
+                wb_path, pdf_path, log_fn=self._log_msg
             )
             self._log_msg("  ✓ 처방전 정보 입력 완료")
 
             # 7단계: 기준처방명 선택
             self._log_msg("7단계: 기준처방명 선택 중...")
             step7_select_prescription_name(
-                wb_path, presc_win, log_fn=self._log_msg
+                wb_path, presc_fields, log_fn=self._log_msg
             )
 
             # 8단계: 질병분류기호 → F5
             self._log_msg("8단계: 질병분류기호 선택 중...")
             step8_select_disease_code(
-                wb_path, presc_win, log_fn=self._log_msg
+                wb_path, presc_fields, log_fn=self._log_msg
             )
 
             # 9단계: 사용자 기타사항 입력
@@ -1061,7 +1146,7 @@ class InsuranceMedApp:
             # 10단계: 1일복용팩수 → T9, 용법 → T10
             self._log_msg("10단계: 1일복용팩수/용법 입력 중...")
             step10_fill_dosage_info(
-                wb_path, presc_win, log_fn=self._log_msg
+                wb_path, presc_fields, log_fn=self._log_msg
             )
 
             # 11단계: OKOSC 복용법 → T11
@@ -1073,7 +1158,7 @@ class InsuranceMedApp:
             # 12~14단계: 한약재 세부사항 → 요양급여비용명세서_양식
             self._log_msg("12~14단계: 한약재 세부사항 입력 중...")
             herb_details = step12_14_fill_herb_details(
-                wb_path, presc_win, log_fn=self._log_msg
+                wb_path, presc_fields, log_fn=self._log_msg
             )
             self._log_msg(f"  ✓ {len(herb_details)}개 한약재 입력 완료")
 

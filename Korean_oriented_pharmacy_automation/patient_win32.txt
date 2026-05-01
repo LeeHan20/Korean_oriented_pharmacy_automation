@@ -1,0 +1,56 @@
+﻿OKOSC hwnd=724144  title='OKOCSTJS(탕전실)-옹기한약국'
+      screen_rect=(-32000, -32000, -31840, -31972)  크기=160x28
+
+전체 자식 수: 130
+
+======================================================================
+=== 환자정보 키워드(환자명/핸드폰/한의원명/배송방식) 포함 컨트롤 ===
+======================================================================
+  hwnd=69014  cls='WindowsForms10.Window.8.app.0.141b42a_r7_ad1'
+    client_xy=(248,804)  크기=1201x85  vis=True
+    text='배송방식: 택배     배송옵션:      발송일자: \r\n환자명: 최해경     전화번호:      핸드폰: 010-6291-1476     \r\n   주소: 서울시 영등포구 신길로 28길 25 101동 1301호 (신길동, 신길파크자이)\r\n한의원명: 오초한의원     전화번호: 02-429-8775     \r\n     주소: 서울 강동구 천호대로 1024 (성내동, 힐스테이트 천호역 젠트리스) 상가 209호'
+
+  hwnd=69098  cls='WindowsForms10.EDIT.app.0.141b42a_r7_ad1'
+    client_xy=(250,804)  크기=1199x85  vis=True
+    text='배송방식: 택배     배송옵션:      발송일자: \r\n환자명: 최해경     전화번호:      핸드폰: 010-6291-1476     \r\n   주소: 서울시 영등포구 신길로 28길 25 101동 1301호 (신길동, 신길파크자이)\r\n한의원명: 오초한의원     전화번호: 02-429-8775     \r\n     주소: 서울 강동구 천호대로 1024 (성내동, 힐스테이트 천호역 젠트리스) 상가 209호'
+
+
+======================================================================
+=== 전화번호 패턴(010-xxxx/02-xxxx) 포함 컨트롤 ===
+======================================================================
+  hwnd=69014  cls='WindowsForms10.Window.8.app.0.141b42a_r7_ad1'
+    client_xy=(248,804)  크기=1201x85  vis=True
+    text='배송방식: 택배     배송옵션:      발송일자: \r\n환자명: 최해경     전화번호:      핸드폰: 010-6291-1476     \r\n   주소: 서울시 영등포구 신길로 28길 25 101동 1301호 (신길동, 신길파크자이)\r\n한의원명: 오초한의원     전화번호: 02-429-8775     \r\n     주소: 서울 강동구 천호대로 1024 (성내동, 힐스테이트 천호역 젠트리스) 상가 209호'
+
+  hwnd=69098  cls='WindowsForms10.EDIT.app.0.141b42a_r7_ad1'
+    client_xy=(250,804)  크기=1199x85  vis=True
+    text='배송방식: 택배     배송옵션:      발송일자: \r\n환자명: 최해경     전화번호:      핸드폰: 010-6291-1476     \r\n   주소: 서울시 영등포구 신길로 28길 25 101동 1301호 (신길동, 신길파크자이)\r\n한의원명: 오초한의원     전화번호: 02-429-8775     \r\n     주소: 서울 강동구 천호대로 1024 (성내동, 힐스테이트 천호역 젠트리스) 상가 209호'
+
+
+======================================================================
+=== 텍스트 있고 client y>=400인 컨트롤 전체 ===
+======================================================================
+  hwnd=69094  cls='WindowsForms10.Window.8.app.0.141b42a_r7_ad1' client_xy=(248,915) 크기=1201x61  text='오초한의원=1 Grid'
+C:\Users\COM\AppData\Local\Programs\Python\Python313-32\python.exe : Traceback 
+(most recent call last):
+위치 줄:1 문자:100
++ ...  Out-Null ; C:\Users\COM\AppData\Local\Programs\Python\Python313-32\p ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last) 
+   ::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\COM\Desktop\automation\Korean_oriented_pharmacy_automation\_de
+bug_patient_win32.py", line 132, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\COM\Desktop\automation\Korean_oriented_pharmacy_automation\_de
+bug_patient_win32.py", line 118, in main
+    print(f"  hwnd={c['hwnd']}  cls={c['cls']!r:<40} "
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          f"client_xy=({c['cx']},{c['cy']}) 크기={c['cw']}x{c['ch']}  "
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          f"text={c['text'][:100]!r}")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'cp949' codec can't encode character '\u32bd' in position 1
+69: illegal multibyte sequence

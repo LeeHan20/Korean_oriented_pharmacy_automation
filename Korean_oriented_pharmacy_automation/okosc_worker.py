@@ -102,17 +102,68 @@ def cmd_step1():
     time.sleep(1.2)
 
     # 32비트 Python + UIA → DataItem 열거 정상 작동
+    import sys as _sys
     all_items = win.descendants(control_type="DataItem")
-    for i, item in enumerate(all_items):
+    print(f"[DEBUG step1] 검색 후 DataItem 개수={len(all_items)}", file=_sys.stderr)
+
+    def _ct(item):
+        t = item.window_text().strip()
+        if t:
+            return t
         try:
-            cells = item.children()
-            row_text = " ".join(c.window_text() for c in cells)
+            ch = item.children()
+            if ch:
+                return ch[0].window_text().strip()
         except Exception:
-            row_text = item.window_text()
+            pass
+        return ""
+
+    # 앞 40개 DataItem 덤프 (main grid 구조 파악)
+    for dbg_i, dbg_it in enumerate(all_items[:40]):
+        try:
+            r = dbg_it.rectangle()
+            t = _ct(dbg_it)
+            print(f"[DEBUG step1] item[{dbg_i:03d}] x={r.left:5d} y={r.top:5d} "
+                  f"text={t!r}", file=_sys.stderr)
+        except Exception:
+            pass
+
+    _NAME_RE  = _re.compile(r'^[가-힣]{2,5}$')
+    _PHONE_RE = _re.compile(r'01[0-9][-\s]?\d{3,4}[-\s]?\d{4}')
+
+    for i, item in enumerate(all_items):
+        row_text = _ct(item)
         if "보험" in row_text:
+            # 클릭 전에 인접 DataItem [i-30 ~ i+30] 수집 → 환자명/전화 포함 가능
+            window = []
+            for j in range(max(0, i - 30), min(len(all_items), i + 30)):
+                window.append(_ct(all_items[j]))
+
+            # 환자명/전화 heuristic 파싱
+            patient_name = patient_contact = ""
+            for cell in window:
+                if not patient_name and _NAME_RE.match(cell.strip()):
+                    patient_name = cell.strip()
+                if not patient_contact:
+                    m = _PHONE_RE.search(cell)
+                    if m:
+                        patient_contact = m.group()
+
+            print(f"[DEBUG step1] 보험 행 발견 idx={i}  row_text={row_text!r}",
+                  file=_sys.stderr)
+            print(f"[DEBUG step1] window({len(window)}개)={window}", file=_sys.stderr)
+            print(f"[DEBUG step1] 환자명={patient_name!r}  전화={patient_contact!r}",
+                  file=_sys.stderr)
+
             item.click_input()
             time.sleep(0.5)
-            return {"status": "ok", "row_idx": i, "row_text": row_text}
+            return {
+                "status":          "ok",
+                "row_idx":         i,
+                "row_text":        row_text,
+                "patient_name":    patient_name,
+                "patient_contact": patient_contact,
+            }
 
     return {"status": "error", "message": "대기처방 목록에서 '보험' 행을 찾을 수 없습니다"}
 
@@ -157,7 +208,7 @@ def cmd_get_herbs():
         except Exception:
             pass
 
-    if herb_table is None or max_items < 9:
+    if herb_table is None or max_items < 2:
         return {"status": "ok", "herbs": herbs}
 
     all_items = herb_table.children(control_type="DataItem")
@@ -176,6 +227,20 @@ def cmd_get_herbs():
             if start_idx is not None:
                 break
 
+    # '1'→'2' 패턴을 못 찾은 경우: 순번이 연속된 숫자인 첫 구간으로 추론
+    if start_idx is None or col_count is None:
+        # 숫자 '1'이 있는 위치를 찾고, 다음 숫자 '2'까지 거리를 열 개수로 추정
+        for i, t in enumerate(all_texts):
+            if t.strip() == "1":
+                # 뒤에서 다음 숫자를 찾아 열 개수 추정
+                for j in range(i + 1, min(i + 20, len(all_texts))):
+                    if all_texts[j].strip().isdigit() and int(all_texts[j].strip()) == 2:
+                        start_idx = i
+                        col_count = j - i
+                        break
+                if start_idx is not None:
+                    break
+
     if start_idx is None or col_count is None or col_count < 2:
         return {"status": "ok", "herbs": herbs}
 
@@ -193,6 +258,16 @@ def cmd_get_herbs():
         if name:
             herbs.append([_rm(name), _rm(dose)])
 
+    # ── 디버그 출력 ──────────────────────────────────────────────────────
+    import sys as _sys
+    print(f"[DEBUG get_herbs] Table 개수={len(tables)}, 최대DataItem={max_items}",
+          file=_sys.stderr)
+    print(f"[DEBUG get_herbs] start_idx={start_idx}, col_count={col_count}",
+          file=_sys.stderr)
+    print(f"[DEBUG get_herbs] 약재 {len(herbs)}개:", file=_sys.stderr)
+    for _n, _d in herbs:
+        print(f"  약재명={_n!r}  1회투약량={_d!r}", file=_sys.stderr)
+
     return {"status": "ok", "herbs": herbs}
 
 
@@ -201,25 +276,99 @@ def cmd_get_herbs():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def cmd_get_patient():
-    win = _okosc_win()
-    result = {"status": "ok", "name": "", "contact": "", "address": ""}
+    """
+    OKOSC 하단 EDIT 컨트롤(WindowsForms10.EDIT...)에서
+    환자명 / 핸드폰 / 주소 / 한의원명 / 한의원전화를 win32gui로 읽어옵니다.
 
-    for ctrl in win.descendants(control_type="Edit"):
+    컨트롤 텍스트 예시:
+      배송방식: 택배     배송옵션:      발송일자:
+      환자명: 최해경     전화번호:      핸드폰: 010-6291-1476
+         주소: 서울시 영등포구 신길로 28길 25 101동 1301호 (신길동, 신길파크자이)
+      한의원명: 오초한의원     전화번호: 02-429-8775
+           주소: 서울 강동구 천호대로 1024 ...
+    """
+    import sys as _sys
+    import ctypes
+    import win32gui
+    import win32con
+
+    KEYWORDS = ["OKOCSTJS", "탕전실", "OKOSC", "OK처방", "처방프로그램"]
+
+    # ── OKOSC 루트 hwnd 찾기 ─────────────────────────────────────────────────
+    root_hwnd = None
+    def _find_root(hwnd, _):
+        nonlocal root_hwnd
+        title = win32gui.GetWindowText(hwnd)
+        cls   = win32gui.GetClassName(hwnd)
+        if any(kw in title for kw in KEYWORDS) and "WindowsForms" in cls:
+            root_hwnd = hwnd
+    win32gui.EnumWindows(_find_root, None)
+    if not root_hwnd:
+        return {"status": "error", "message": "OKOSC 창을 찾을 수 없습니다"}
+
+    # ── 자식창에서 환자정보 EDIT 컨트롤 찾기 ────────────────────────────────
+    def _wm_text(hwnd):
         try:
-            aid = ctrl.automation_id().lower()
-            val = ctrl.window_text().strip()
-            if not val:
-                continue
-            if any(k in aid for k in ("patient", "name", "환자", "성명")):
-                result["name"] = val
-            elif any(k in aid for k in ("tel", "phone", "연락", "전화")):
-                result["contact"] = val
-            elif any(k in aid for k in ("addr", "주소")):
-                result["address"] = val
+            n = win32gui.SendMessage(hwnd, win32con.WM_GETTEXTLENGTH, 0, 0)
+            if n == 0:
+                return ""
+            buf = ctypes.create_unicode_buffer(n + 4)
+            win32gui.SendMessage(hwnd, win32con.WM_GETTEXT, n + 4, buf)
+            return buf.value
         except Exception:
-            pass
+            return ""
 
-    return result
+    info_text = ""
+    def _find_edit(hwnd, _):
+        nonlocal info_text
+        if info_text:            # 이미 찾았으면 skip
+            return
+        cls = win32gui.GetClassName(hwnd)
+        if "EDIT" not in cls.upper():
+            return
+        t = _wm_text(hwnd)
+        if "환자명" in t and "핸드폰" in t:
+            info_text = t
+            print(f"[DEBUG get_patient] EDIT hwnd={hwnd}  cls={cls!r}  len={len(t)}",
+                  file=_sys.stderr)
+            print(f"[DEBUG get_patient] text={t!r}", file=_sys.stderr)
+
+    win32gui.EnumChildWindows(root_hwnd, _find_edit, None)
+
+    if not info_text:
+        print("[DEBUG get_patient] 환자정보 EDIT 컨트롤 찾지 못함", file=_sys.stderr)
+        return {"status": "ok", "name": "", "contact": "", "address": "",
+                "clinic_name": "", "clinic_contact": ""}
+
+    # ── 파싱 ─────────────────────────────────────────────────────────────────
+    _NAME_RE    = _re.compile(r'환자명:\s*([가-힣]{2,10})')
+    _PHONE_RE   = _re.compile(r'핸드폰:\s*(01[0-9][\s\-]?\d{3,4}[\s\-]?\d{4})')
+    _ADDR_RE    = _re.compile(r'환자명:.*?\n\s*주소:\s*(.+?)(?:\n|$)', _re.DOTALL)
+    _CLINIC_RE  = _re.compile(r'한의원명:\s*([^\s]+)')
+    _CLINIC_TEL = _re.compile(r'한의원명:.*?전화번호:\s*([\d\-]+)', _re.DOTALL)
+
+    m = _NAME_RE.search(info_text)
+    name = m.group(1).strip() if m else ""
+
+    m = _PHONE_RE.search(info_text)
+    contact = m.group(1).strip() if m else ""
+
+    m = _ADDR_RE.search(info_text)
+    address = m.group(1).strip() if m else ""
+
+    m = _CLINIC_RE.search(info_text)
+    clinic_name = m.group(1).strip() if m else ""
+
+    m = _CLINIC_TEL.search(info_text)
+    clinic_contact = m.group(1).strip() if m else ""
+
+    print(f"[DEBUG get_patient] 환자명={name!r}  핸드폰={contact!r}", file=_sys.stderr)
+    print(f"[DEBUG get_patient] 주소={address!r}", file=_sys.stderr)
+    print(f"[DEBUG get_patient] 한의원={clinic_name!r}  한의원전화={clinic_contact!r}",
+          file=_sys.stderr)
+
+    return {"status": "ok", "name": name, "contact": contact, "address": address,
+            "clinic_name": clinic_name, "clinic_contact": clinic_contact}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -227,25 +376,196 @@ def cmd_get_patient():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def cmd_get_dosage():
+    """
+    Table[0] (DataItem 5개)의 item[4]에서 복용법 텍스트를 반환합니다.
+    예: '20 첩 30 팩 (1일 2팩/ 10일/ 1팩 110cc)'
+    Text descendants 순회는 C1TrueDBGrid1 때문에 무한대기를 일으키므로 사용하지 않습니다.
+    """
+    import sys as _sys
+
+    def _cell_text(item):
+        t = item.window_text().strip()
+        if t:
+            return t
+        try:
+            ch = item.children()
+            if ch:
+                return ch[0].window_text().strip()
+        except Exception:
+            pass
+        return ""
+
     win = _okosc_win()
     dosage = ""
 
-    for ctrl in win.descendants(control_type="Edit"):
-        try:
-            aid = ctrl.automation_id().lower()
-            if any(k in aid for k in ("dosage", "복용", "복약")):
-                dosage = ctrl.window_text().strip()
-                if dosage:
-                    break
-        except Exception:
-            pass
+    tables = win.descendants(control_type="Table")
+    print(f"[DEBUG get_dosage] Table 개수={len(tables)}", file=_sys.stderr)
+    for ti, table in enumerate(tables):
+        items = table.children(control_type="DataItem")
+        texts = [_cell_text(it) for it in items]
+        print(f"[DEBUG get_dosage] Table[{ti}] DataItem={len(items)}개  texts={texts}",
+              file=_sys.stderr)
+        if len(items) == 5 and texts[4]:
+            dosage = texts[4]
+            print(f"[DEBUG get_dosage] 복용법 발견: {dosage!r}", file=_sys.stderr)
+            break
 
     return {"status": "ok", "dosage": dosage}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  진입점
+#  save_pdf: 출력 → PDF저장 클릭 → 파일 저장 대화상자 처리 → PDF 경로 반환
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def cmd_save_pdf():
+    """
+    OKOSC 출력 메뉴 → PDF저장을 클릭하고, 저장 대화상자에서
+    argv[2]로 전달된 경로에 PDF를 저장합니다.
+
+    argv[2]: 저장할 PDF 경로 (예: C:\\Users\\COM\\Downloads\\presc.pdf)
+    반환: {"status": "ok", "pdf_path": "<경로>"}
+    """
+    import sys as _sys
+    import os as _os
+    import pyautogui
+    from pywinauto.keyboard import send_keys
+    from pywinauto import Desktop as _Desktop
+
+    if len(sys.argv) < 3:
+        return {"status": "error", "message": "PDF 저장 경로를 argv[2]로 전달하세요"}
+
+    save_path = sys.argv[2]
+    # 이미 존재하면 삭제 (이전 실행 잔여물)
+    if _os.path.exists(save_path):
+        _os.remove(save_path)
+
+    win = _okosc_win()
+    win.set_focus()
+    time.sleep(0.3)
+
+    # ── 출력 버튼 클릭 ───────────────────────────────────────────────────────
+    clicked_menu = False
+    for try_title in ["출력", "출  력"]:
+        try:
+            btn = win.child_window(title=try_title, control_type="Button")
+            btn.click_input()
+            clicked_menu = True
+            break
+        except Exception:
+            pass
+    if not clicked_menu:
+        # pyautogui fallback: 화면 좌표 탐색
+        try:
+            all_btns = win.descendants(control_type="Button")
+            for b in all_btns:
+                if "출력" in b.window_text():
+                    b.click_input()
+                    clicked_menu = True
+                    break
+        except Exception:
+            pass
+    if not clicked_menu:
+        return {"status": "error", "message": "출력 버튼을 찾을 수 없습니다"}
+
+    time.sleep(0.5)
+    print("[DEBUG save_pdf] 출력 버튼 클릭 완료", file=_sys.stderr)
+
+    # ── 첩약보험(처방전) 메뉴 항목 클릭 ────────────────────────────────────
+    # 팝업 메뉴는 최상위 창으로 나타남
+    clicked_pdf = False
+    for _ in range(10):
+        try:
+            desktop = _Desktop(backend="uia")
+            for ctrl_type in ("MenuItem", "ListItem", "Button", "Text"):
+                for w in desktop.windows():
+                    for ci in w.descendants(control_type=ctrl_type):
+                        txt = ci.window_text()
+                        if "첩약보험" in txt and "처방전" in txt:
+                            ci.click_input()
+                            clicked_pdf = True
+                            break
+                    if clicked_pdf:
+                        break
+                if clicked_pdf:
+                    break
+            if clicked_pdf:
+                break
+        except Exception:
+            pass
+        time.sleep(0.2)
+
+    if not clicked_pdf:
+        send_keys("{ESCAPE}")
+        return {"status": "error", "message": "첩약보험(처방전) 메뉴 항목을 찾을 수 없습니다"}
+
+    time.sleep(1.0)
+    print("[DEBUG save_pdf] 첩약보험(처방전) 메뉴 클릭 완료", file=_sys.stderr)
+
+    # ── 파일 저장 대화상자 처리 ──────────────────────────────────────────────
+    # Windows 표준 저장 대화상자 (제목: "다른 이름으로 저장" 또는 "Save As")
+    dlg = None
+    for _ in range(20):
+        try:
+            dlg = _Desktop(backend="uia").window(
+                title_re=r"다른 이름으로 저장|Save As|저장"
+            )
+            dlg.wait("visible", timeout=2)
+            break
+        except Exception:
+            pass
+        time.sleep(0.3)
+
+    if dlg is None:
+        return {"status": "error", "message": "파일 저장 대화상자가 나타나지 않았습니다"}
+
+    print("[DEBUG save_pdf] 저장 대화상자 발견", file=_sys.stderr)
+
+    # 파일명 입력란에 경로 입력
+    try:
+        # 파일명 콤보/에디트 컨트롤 찾기
+        name_edit = dlg.child_window(control_type="Edit", found_index=0)
+        name_edit.set_text(save_path)
+    except Exception:
+        # pyautogui 직접 타이핑 fallback
+        send_keys("^a")
+        time.sleep(0.1)
+        pyautogui.write(save_path, interval=0.02)
+
+    time.sleep(0.3)
+    send_keys("{ENTER}")
+    time.sleep(0.5)
+
+    # 덮어쓰기 확인 대화상자가 나타날 경우 Enter
+    try:
+        confirm = _Desktop(backend="uia").window(title_re=r".*확인.*|.*Confirm.*")
+        confirm.wait("visible", timeout=2)
+        send_keys("{ENTER}")
+        time.sleep(0.5)
+    except Exception:
+        pass
+
+    # ── PDF 생성 대기 ────────────────────────────────────────────────────────
+    for _ in range(30):
+        if _os.path.exists(save_path) and _os.path.getsize(save_path) > 1024:
+            print(f"[DEBUG save_pdf] PDF 저장 완료: {save_path}", file=_sys.stderr)
+            return {"status": "ok", "pdf_path": save_path}
+        time.sleep(0.5)
+
+    # 경로에 없어도 다운로드 폴더에서 최근 PDF 탐색 (앱이 경로 무시하는 경우 대비)
+    import glob as _glob
+    dl_dir = _os.path.dirname(save_path)
+    pdfs = sorted(
+        _glob.glob(_os.path.join(dl_dir, "*.pdf")),
+        key=_os.path.getmtime,
+        reverse=True
+    )
+    if pdfs and (time.time() - _os.path.getmtime(pdfs[0])) < 30:
+        actual = pdfs[0]
+        print(f"[DEBUG save_pdf] 대체 PDF 발견: {actual}", file=_sys.stderr)
+        return {"status": "ok", "pdf_path": actual}
+
+    return {"status": "error", "message": f"PDF 파일이 생성되지 않았습니다: {save_path}"}
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  setup_search: OKOSC 검색 설정 및 실행 (auto3.py 루프 전 1회 호출)
@@ -711,6 +1031,7 @@ COMMANDS = {
     "get_herbs":            cmd_get_herbs,
     "get_patient":          cmd_get_patient,
     "get_dosage":           cmd_get_dosage,
+    "save_pdf":             cmd_save_pdf,
     "setup_search":         cmd_setup_search,
     "enter_delivery_memos": cmd_enter_delivery_memos,
     "get_presc_numbers":    cmd_get_presc_numbers,

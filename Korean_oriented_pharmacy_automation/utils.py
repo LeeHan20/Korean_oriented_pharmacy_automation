@@ -525,7 +525,7 @@ def human_text_input_dialog(title: str, prompt: str,
         win.resizable(False, False)
 
         tk.Label(win, text=prompt, font=("맑은 고딕", 10),
-                 wraplength=400, justify="left", padx=20, pady=(15, 5)).pack()
+                 wraplength=400, justify="left", padx=20).pack(pady=(15, 5))
 
         entry_var = tk.StringVar()
         entry = tk.Entry(win, textvariable=entry_var,

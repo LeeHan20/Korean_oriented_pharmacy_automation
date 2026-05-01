@@ -18,3 +18,6 @@ Pillow>=10.0.0
 
 # XLS 파일 읽기 (openpyxl은 xlsx만 지원, xls는 xlrd 필요)
 xlrd>=2.0.1
+
+# PDF 텍스트/테이블 추출 (처방전 PDF 파싱)
+pdfplumber>=0.10.0
