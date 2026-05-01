@@ -121,7 +121,7 @@ def step1_build_tracking_map() -> tuple:
 def step2_3_4_enter_memo_and_complete(tracking_map: dict, log_fn=None):
     """
     처방번호별로 배송메모 입력 → 완료상태 처리를 순차 실행합니다.
-    흐름: 메모 입력 → 완료 누르기 → 다음 항목 반복
+    흐름: (1회) 검색 설정·실행 → 항목별 메모 입력 → 완료 처리 반복
     """
     import json
     import tempfile
@@ -129,6 +129,13 @@ def step2_3_4_enter_memo_and_complete(tracking_map: dict, log_fn=None):
     def log(msg):
         if log_fn:
             log_fn(msg)
+
+    # ── OKOSC 검색 설정 및 실행 (1회) ───────────────────────────────────────
+    log("OKOSC 검색 설정 중 (진행상태=조제, 7일)...")
+    search_result = utils.call_okosc_worker("setup_search", timeout=30)
+    if search_result.get("status") != "ok":
+        raise RuntimeError(f"OKOSC 검색 설정 실패: {search_result.get('message')}")
+    log("  ✓ 검색 완료")
 
     total = len(tracking_map)
     success = 0

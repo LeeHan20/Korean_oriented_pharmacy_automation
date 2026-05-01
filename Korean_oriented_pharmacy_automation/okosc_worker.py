@@ -197,37 +197,26 @@ def cmd_get_dosage():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  enter_delivery_memos: 배송메모 입력 (auto3.py에서 호출)
-#  auto1.py step5의 OKOSC 탐색 로직을 그대로 가져와 사용
+#  setup_search: OKOSC 검색 설정 및 실행 (auto3.py 루프 전 1회 호출)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def cmd_enter_delivery_memos():
+def cmd_setup_search():
     """
-    배송메모 일괄 입력.
-    sys.argv[2]: {이름: "로젠 XXXXXX"} 형태의 tracking_map JSON 파일 경로
-
-    OKOSC 탐색 로직은 auto1.py step5의 _set_ultra_date / 드롭다운 방식을 그대로 사용.
+    OKOSC 검색 조건 설정 및 검색 실행.
+    - 검색기준: 진행상태
+    - 날짜: 7일 전 ~ 오늘
+    - 진행상태 필터: 조제
+    auto3.py에서 enter_delivery_memos / check_and_complete 루프 전에 1회 호출.
     """
     import pyautogui
     from pywinauto.keyboard import send_keys
-    from pywinauto import Desktop
-    import json
     from datetime import datetime, timedelta
-
-    if len(sys.argv) < 3:
-        return {"status": "error", "message": "tracking_map JSON 파일 경로 필요 (argv[2])"}
-
-    with open(sys.argv[2], 'r', encoding='utf-8') as f:
-        tracking_map = json.load(f)
-
-    if not tracking_map:
-        return {"status": "error", "message": "tracking_map이 비어 있습니다"}
 
     win = _okosc_win()
     win.set_focus()
     time.sleep(0.5)
 
-    # ── 검색 기준 → 처방전송일자 (auto1.py step5 로직) ───────────────────────
+    # ── 검색 기준 → 진행상태 ─────────────────────────────────────────────────
     try:
         ctrl = win.child_window(auto_id="ulCboSearch")
         r = ctrl.rectangle()
@@ -241,19 +230,14 @@ def cmd_enter_delivery_memos():
     except Exception:
         pass
 
-    # ── 날짜 설정 (auto1.py step5의 _set_ultra_date 로직) ────────────────────
+    # ── 날짜 설정 ────────────────────────────────────────────────────────────
     today = datetime.now()
-    start_date = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
     end_date = today.strftime("%Y-%m-%d")
 
     def _set_ultra_date(auto_id, date_str):
-        """
-        UltraDateTimeEditor에 날짜 입력.
-        컨트롤 클릭 → End → Backspace 8번 → 년2자리+월2자리+일2자리 입력.
-        (auto1.py step5의 로직과 동일)
-        """
         y, m, d = date_str.split("-")
-        yy = y[2:]   # 년도 뒤 2자리 (예: "2026" → "26")
+        yy = y[2:]
         ctrl = win.child_window(auto_id=auto_id)
         rect = ctrl.rectangle()
         cx = (rect.left + rect.right) // 2
@@ -275,13 +259,12 @@ def cmd_enter_delivery_memos():
     _set_ultra_date("ulDteSearchStart", start_date)
     _set_ultra_date("ulDteSearchEnd", end_date)
 
-    # TAB 후 드롭다운이 열렸을 수 있으므로 ESC로 닫기 (auto1.py 동일)
     send_keys('{ESC}')
     time.sleep(0.2)
     win.set_focus()
     time.sleep(0.2)
 
-    # ── 진행상태 → 조제 선택 (auto1.py step5 로직) ───────────────────────────
+    # ── 진행상태 → 조제 선택 ────────────────────────────────────────────────
     try:
         state_ctrl = win.child_window(auto_id="ulCboSearchCBJState")
         rect = state_ctrl.rectangle()
@@ -300,9 +283,42 @@ def cmd_enter_delivery_memos():
     send_keys('{ENTER}')
     time.sleep(0.3)
 
-    # ── 검색 실행 (auto1.py step5 로직) ──────────────────────────────────────
+    # ── 검색 실행 ────────────────────────────────────────────────────────────
     win.child_window(auto_id="ulBtnSearchCBJ").click_input()
     time.sleep(2)
+
+    return {"status": "ok"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  enter_delivery_memos: 배송메모 입력 (auto3.py에서 호출)
+#  사전에 cmd_setup_search()가 호출되어 검색 결과가 표시되어 있어야 합니다.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def cmd_enter_delivery_memos():
+    """
+    배송메모 일괄 입력.
+    sys.argv[2]: {처방번호: "로젠 XXXXXX"} 형태의 tracking_map JSON 파일 경로
+
+    사전에 cmd_setup_search()가 호출되어 검색 결과가 표시되어 있어야 합니다.
+    """
+    import pyautogui
+    from pywinauto.keyboard import send_keys
+    from pywinauto import Desktop
+    import json
+
+    if len(sys.argv) < 3:
+        return {"status": "error", "message": "tracking_map JSON 파일 경로 필요 (argv[2])"}
+
+    with open(sys.argv[2], 'r', encoding='utf-8') as f:
+        tracking_map = json.load(f)
+
+    if not tracking_map:
+        return {"status": "error", "message": "tracking_map이 비어 있습니다"}
+
+    win = _okosc_win()
+    win.set_focus()
+    time.sleep(0.3)
 
     # ── 검색 결과 DataItem 열거 → 처방번호 기준으로 행 클릭 ─────────────────
     import collections
@@ -644,6 +660,7 @@ COMMANDS = {
     "get_herbs":            cmd_get_herbs,
     "get_patient":          cmd_get_patient,
     "get_dosage":           cmd_get_dosage,
+    "setup_search":         cmd_setup_search,
     "enter_delivery_memos": cmd_enter_delivery_memos,
     "get_presc_numbers":    cmd_get_presc_numbers,
     "check_and_complete":   cmd_check_and_complete,
