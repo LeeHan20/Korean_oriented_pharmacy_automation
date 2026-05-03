@@ -130,42 +130,84 @@ def cmd_step1():
 
     _NAME_RE  = _re.compile(r'^[가-힣]{2,5}$')
     _PHONE_RE = _re.compile(r'01[0-9][-\s]?\d{3,4}[-\s]?\d{4}')
+    _ROW_RE   = _re.compile(r'\s+Row(\d+)$')
 
-    for i, item in enumerate(all_items):
-        row_text = _ct(item)
-        if "보험" in row_text:
-            # 클릭 전에 인접 DataItem [i-30 ~ i+30] 수집 → 환자명/전화 포함 가능
-            window = []
-            for j in range(max(0, i - 30), min(len(all_items), i + 30)):
-                window.append(_ct(all_items[j]))
+    # ── "컬럼명 RowN" 형식으로 DataItem 파싱 (enter_delivery_memos와 동일 방식) ──
+    import collections as _col
+    rows_dict = _col.defaultdict(dict)
+    for item in all_items:
+        name_txt = item.element_info.name
+        m = _ROW_RE.search(name_txt)
+        if not m:
+            continue  # 헤더 셀 등 "RowN" 없는 항목 제외
+        row_idx = int(m.group(1))
+        col_name = name_txt[:m.start()].strip()
+        try:
+            val = item.iface_value.CurrentValue or ""
+        except Exception:
+            val = item.window_text().strip()
+        rows_dict[row_idx][col_name] = {"val": val, "item": item}
 
-            # 환자명/전화 heuristic 파싱
-            patient_name = patient_contact = ""
-            for cell in window:
-                if not patient_name and _NAME_RE.match(cell.strip()):
-                    patient_name = cell.strip()
-                if not patient_contact:
-                    m = _PHONE_RE.search(cell)
-                    if m:
-                        patient_contact = m.group()
+    print(f"[DEBUG step1] rows_dict 행 수={len(rows_dict)}", file=_sys.stderr)
+    for ri in sorted(rows_dict.keys()):
+        row_cols = {c: d["val"] for c, d in rows_dict[ri].items()}
+        print(f"[DEBUG step1] Row{ri}: {row_cols}", file=_sys.stderr)
 
-            print(f"[DEBUG step1] 보험 행 발견 idx={i}  row_text={row_text!r}",
-                  file=_sys.stderr)
-            print(f"[DEBUG step1] window({len(window)}개)={window}", file=_sys.stderr)
-            print(f"[DEBUG step1] 환자명={patient_name!r}  전화={patient_contact!r}",
-                  file=_sys.stderr)
+    # 보험 컬럼 값이 정확히 "보험"인 행 찾기
+    target_row_idx = None
+    for row_idx in sorted(rows_dict.keys()):
+        row = rows_dict[row_idx]
+        if row.get("보험", {}).get("val", "").strip() == "보험":
+            target_row_idx = row_idx
+            break
 
-            item.click_input()
-            time.sleep(0.5)
-            return {
-                "status":          "ok",
-                "row_idx":         i,
-                "row_text":        row_text,
-                "patient_name":    patient_name,
-                "patient_contact": patient_contact,
-            }
+    if target_row_idx is None:
+        # fallback: window_text 방식 (구조가 다른 버전 대비)
+        for i, item in enumerate(all_items):
+            row_text = _ct(item)
+            if row_text.strip() == "보험":
+                print(f"[DEBUG step1] fallback 보험 행 idx={i}", file=_sys.stderr)
+                item.click_input()
+                time.sleep(0.5)
+                return {
+                    "status": "ok", "row_idx": i,
+                    "row_text": row_text, "patient_name": "", "patient_contact": "",
+                }
+        return {"status": "error", "message": "대기처방 목록에서 '보험' 행을 찾을 수 없습니다"}
 
-    return {"status": "error", "message": "대기처방 목록에서 '보험' 행을 찾을 수 없습니다"}
+    target_row = rows_dict[target_row_idx]
+
+    # 환자명 / 연락처 추출
+    patient_name    = target_row.get("환자명",   {}).get("val", "").strip()
+    patient_contact = (target_row.get("핸드폰",  {}).get("val", "") or
+                       target_row.get("전화번호", {}).get("val", "")).strip()
+    if not patient_contact:
+        for data in target_row.values():
+            m2 = _PHONE_RE.search(data.get("val", ""))
+            if m2:
+                patient_contact = m2.group()
+                break
+    row_text = target_row.get("보험", {}).get("val", "")
+
+    print(f"[DEBUG step1] 보험 행 Row{target_row_idx}  환자명={patient_name!r}"
+          f"  전화={patient_contact!r}", file=_sys.stderr)
+
+    # 처방번호 셀(또는 첫 번째 셀) 클릭으로 행 선택
+    click_item = (target_row.get("처방번호", {}).get("item") or
+                  target_row.get("No",       {}).get("item") or
+                  next((v["item"] for v in target_row.values()), None))
+    if click_item is None:
+        return {"status": "error", "message": "클릭할 셀을 찾을 수 없습니다"}
+
+    click_item.click_input()
+    time.sleep(0.5)
+    return {
+        "status":          "ok",
+        "row_idx":         target_row_idx,
+        "row_text":        row_text,
+        "patient_name":    patient_name,
+        "patient_contact": patient_contact,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

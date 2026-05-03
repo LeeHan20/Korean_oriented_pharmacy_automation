@@ -384,11 +384,90 @@ def step9_normalize_id_columns(xlsx_path: str, start_row: int, end_row: int):
             # E만 있으면 D로 이동
             ws.cell(row=row, column=4).value = e_val
             ws.cell(row=row, column=5).value = None
+        elif d_has and e_has and str(d_val).strip() == str(e_val).strip():
+            # D와 E가 같은 번호면 E 삭제
+            ws.cell(row=row, column=5).value = None
         elif d_has and e_has:
-            # 둘 다 있으면 그대로
+            # 둘 다 있고 다르면 그대로
             pass
 
     wb.save(xlsx_path)
+
+
+def step_merge_same_address(xlsx_path: str, start_row: int, end_row: int):
+    """
+    동일 주소(C열) 행 병합 (옹기한약 사이트에서 받은 원본 rows 대상: 1..start_row-1):
+    - C열 주소가 같은 행들을 하나로 합침
+    - 대표 행(첫 번째 행) F열 = 그룹 내 행 수
+    - 나머지 행 삭제
+    - DB 저장 (SAME_ADDRESS_DB_PATH):
+        {대표 고유번호(J열 6자리): [합쳐진 고유번호들(J열 6자리)]}
+        ※ J열 4자리는 OKOSC autocode이므로 DB에 포함하지 않음
+    - 삭제한 행 수만큼 end_row 조정하여 반환
+    반환: (new_end_row, merged_count)
+    """
+    import json
+
+    website_end = start_row - 1   # 원본 사이트 rows: 1..website_end
+    if website_end < 1:
+        return end_row, 0
+
+    wb = openpyxl.load_workbook(xlsx_path)
+    ws = wb.active
+
+    # C열(주소) 기준으로 그룹화 (순서 유지)
+    # 각 항목: (row_index, J열_고유번호_str)
+    addr_groups: dict[str, list[tuple[int, str]]] = {}
+    for r in range(1, website_end + 1):
+        addr = ws.cell(row=r, column=3).value
+        j_val = ws.cell(row=r, column=10).value   # J열 = 고유번호(6자리) 또는 autocode(4자리)
+        addr_key = str(addr).strip() if addr not in (None, "") else f"__empty__{r}"
+        j_str = str(j_val).strip() if j_val not in (None, "") else ""
+        addr_groups.setdefault(addr_key, []).append((r, j_str))
+
+    rows_to_delete: list[int] = []
+    merge_db: dict[str, list[str]] = {}
+
+    for addr_key, group in addr_groups.items():
+        if len(group) <= 1:
+            continue
+        rep_row, rep_j = group[0]
+        others = group[1:]
+
+        # 대표 행 F열 = n // 2 + 1 (n = 그룹 크기)
+        celllength = len(group)
+        ws.cell(row=rep_row, column=6).value = (celllength // 2) + (celllength % 2)
+
+        # DB 기록 (6자리 고유번호만)
+        if len(rep_j) == 6 and rep_j.isdigit():
+            merged = [j for _, j in others if len(j) == 6 and j.isdigit()]
+            if merged:
+                merge_db[rep_j] = merged
+
+        rows_to_delete.extend(r for r, _ in others)
+
+    # 행 삭제 (아래에서 위로, 인덱스 밀림 방지)
+    for r in sorted(rows_to_delete, reverse=True):
+        ws.delete_rows(r)
+
+    wb.save(xlsx_path)
+
+    # DB 갱신 (기존 항목 보존)
+    db_path = config.SAME_ADDRESS_DB_PATH
+    if os.path.exists(db_path):
+        with open(db_path, "r", encoding="utf-8") as f:
+            existing_db: dict = json.load(f)
+    else:
+        existing_db = {}
+
+    existing_db.update(merge_db)
+
+    with open(db_path, "w", encoding="utf-8") as f:
+        json.dump(existing_db, f, ensure_ascii=False, indent=2)
+
+    deleted = len(rows_to_delete)
+    new_end = end_row - deleted
+    return new_end, deleted
 
 
 def step10_11_paste_iksan_data(xlsx_path: str):
@@ -422,7 +501,6 @@ def step10_11_paste_iksan_data(xlsx_path: str):
         ws.cell(row=r, column=8).value = config.DELIVERY_H_VALUE   # H
 
     wb.save(xlsx_path)
-    os.startfile(xlsx_path)  # 편의를 위해 저장 후 열기
 
 def step_highlight_checks(xlsx_path: str):
     """
@@ -491,6 +569,26 @@ def step_highlight_checks(xlsx_path: str):
         h_ok = str(h_val).strip() == "한약" if h_val is not None else False
         if not h_ok:
             ws.cell(row=row, column=8).fill = LIGHT_GREEN
+
+    # ── 열 너비 자동 조정 ────────────────────────────────────────────────────
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            try:
+                cell_len = len(str(cell.value)) if cell.value is not None else 0
+                if cell_len > max_len:
+                    max_len = cell_len
+            except Exception:
+                pass
+        ws.column_dimensions[col_letter].width = min(max_len + 2, 50)  # 최대 너비 제한
+
+    # ── 전체 셀 텍스트 정렬 (가로 왼쪽, 세로 가운데) ────────────────────────
+    from openpyxl.styles import Alignment
+    align = Alignment(horizontal='left', vertical='center')
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = align
 
     wb.save(xlsx_path)
 
@@ -724,6 +822,14 @@ class Auto1App:
             step9_normalize_id_columns(xlsx_path, new_start, new_end)
             self._log_msg("  ✓ 완료")
 
+            # 9-1. 동일 주소 병합
+            self._log_msg("9-1단계: 동일 주소 행 병합 중...")
+            new_end, merged_count = step_merge_same_address(xlsx_path, new_start, new_end)
+            if merged_count > 0:
+                self._log_msg(f"  ✓ {merged_count}행 병합 완료 → new_end={new_end}")
+            else:
+                self._log_msg("  ✓ 동일 주소 없음 (병합 없음)")
+
             # 10-11. 익산대장
             self._log_msg("10~11단계: 익산대장 데이터 추가 중...")
             step10_11_paste_iksan_data(xlsx_path)
@@ -733,6 +839,9 @@ class Auto1App:
             self._log_msg("중복/비정상 셀 하이라이트 중...")
             step_highlight_checks(xlsx_path)
             self._log_msg("  ✓ 완료")
+
+            # 파일 열기 (사람 검토 전)
+            os.startfile(xlsx_path)
 
             # 12. 사람 검토
             self._log_msg("12단계: 사람 검토 대기 중...")

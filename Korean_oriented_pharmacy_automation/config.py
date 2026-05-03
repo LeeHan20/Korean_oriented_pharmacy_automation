@@ -52,6 +52,10 @@ PYTHON32_PATH = r"C:\Users\COM\AppData\Local\Programs\Python\Python313-32\python
 # 처방번호 ↔ autocode(4자리) 매핑 DB (auto1에서 생성, auto3에서 참조)
 AUTOCODE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "autocode_db.json")
 
+# 동일주소 병합 DB: {대표 처방번호: [합쳐진 처방번호들]}
+# auto1에서 생성, auto2에서 참조 (대표 1건 발송 → 나머지도 택배발송 처리)
+SAME_ADDRESS_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "same_address_db.json")
+
 # ─── 타임아웃 설정 (초) ──────────────────────────────────────────────────────
 DOWNLOAD_TIMEOUT = 60        # 파일 다운로드 최대 대기 시간
 PAGE_LOAD_TIMEOUT = 30       # 페이지 로딩 최대 대기 시간

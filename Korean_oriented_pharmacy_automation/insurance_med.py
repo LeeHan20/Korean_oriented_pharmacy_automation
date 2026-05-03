@@ -381,40 +381,6 @@ def step2_fill_price_sheet(wb_path: str, search_dlg, log_fn=None) -> list:
     return herbs
 
 
-def step3_check_origin(wb_path: str, herbs: list, log_fn=None) -> bool:
-    """
-    가격표 시트에서 약재 기입 행의 E~L열에 공란이 있으면
-    사용자에게 원산지 확인을 요청합니다.
-    반환: 계속 진행 여부
-    """
-    def log(m):
-        if log_fn:
-            log_fn(m)
-
-    wb = openpyxl.load_workbook(wb_path, data_only=True)
-    ws = wb[SHEET_PRICE]
-
-    missing_rows = []
-    for i in range(len(herbs)):
-        r = 12 + i
-        for col in range(5, 13):   # E=5 ~ L=12
-            if ws.cell(row=r, column=col).value in (None, ""):
-                missing_rows.append(r)
-                break
-
-    if not missing_rows:
-        log("  원산지 확인: 공란 없음")
-        return True
-
-    rows_str = ", ".join(str(r) for r in missing_rows)
-    return utils.human_review_dialog(
-        "원산지 확인 필요",
-        f"가격표 시트에 원산지 확인이 필요한 약재가 있습니다.\n",
-        ok_text="확인 완료 - 계속",
-        cancel_text="중단",
-    )
-
-
 def step4_fill_patient_info(wb_path: str, search_dlg, log_fn=None,
                              prefill_name: str = "", prefill_contact: str = ""):
     """
@@ -809,23 +775,6 @@ def step8_select_disease_code(wb_path: str, presc_fields: dict, log_fn=None):
     log(f"  F5 질병분류기호 입력 완료: {disease_code}")
 
 
-def step9_user_misc_input(log_fn=None) -> str:
-    """
-    사용자가 기타 사항을 입력하고 확인합니다.
-    반환: 입력된 기타사항 문자열 (없으면 빈 문자열)
-    """
-    def log(m):
-        if log_fn:
-            log_fn(m)
-
-    result = utils.human_text_input_dialog(
-        "기타 사항 입력",
-        "기타 사항을 입력해 주세요.\n(없으면 빈칸으로 확인)"
-    )
-    log(f"  기타 사항: {result if result else '(없음)'}")
-    return result or ""
-
-
 def step10_fill_dosage_info(wb_path: str, presc_fields: dict, log_fn=None):
     """
     PDF 파싱된 1일복용팩수 → 가격표 T9, 용법 → T10에 입력합니다.
@@ -1212,14 +1161,6 @@ class InsuranceMedApp:
             )
             self._log_msg(f"  ✓ {len(herbs)}개 약재 입력 완료")
 
-            # 3단계: 원산지 확인
-            self._log_msg("3단계: 원산지 공란 확인 중...")
-            ok = step3_check_origin(wb_path, herbs, log_fn=self._log_msg)
-            if not ok:
-                self._log_msg("━━━ 사용자 중단 ━━━")
-                self._put("status", "⏹ 중단됨")
-                return
-
             # 4단계: 환자 정보 → O5/O6/O7
             self._log_msg("4단계: 환자 정보 입력 중...")
             step4_fill_patient_info(wb_path, search_dlg, log_fn=self._log_msg,
@@ -1249,10 +1190,6 @@ class InsuranceMedApp:
             step8_select_disease_code(
                 wb_path, presc_fields, log_fn=self._log_msg
             )
-
-            # 9단계: 사용자 기타사항 입력
-            self._log_msg("9단계: 기타 사항 입력 대기 중...")
-            step9_user_misc_input(log_fn=self._log_msg)
 
             # 10단계: 1일복용팩수 → T9, 용법 → T10
             self._log_msg("10단계: 1일복용팩수/용법 입력 중...")

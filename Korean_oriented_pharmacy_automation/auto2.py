@@ -213,6 +213,7 @@ def step6_update_order_status(driver, excel_path: str):
     """
     주문등록_출력 파일 S열(주문번호) = 옹기한약 사이트 고유번호와 매칭하여
     주문 상태를 '택배 발송'으로 변경.
+    same_address_db.json을 조회하여 병합된 고유번호도 함께 변경.
 
     HTML 구조 (행 1개 예시):
       <tr>
@@ -225,6 +226,7 @@ def step6_update_order_status(driver, excel_path: str):
         ...
       </tr>
     """
+    import json
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait, Select
     from selenium.webdriver.support import expected_conditions as EC
@@ -257,6 +259,20 @@ def step6_update_order_status(driver, excel_path: str):
     if not order_numbers:
         return
 
+    # ── same_address_db 조회 → 병합된 고유번호 추가 ──────────────────────────
+    db_path = config.SAME_ADDRESS_DB_PATH
+    if os.path.exists(db_path):
+        with open(db_path, "r", encoding="utf-8") as f:
+            same_addr_db: dict = json.load(f)
+    else:
+        same_addr_db = {}
+
+    all_order_numbers: list[str] = []
+    for ono in order_numbers:
+        all_order_numbers.append(ono)
+        if ono in same_addr_db:
+            all_order_numbers.extend(same_addr_db[ono])
+
     # ── 홈페이지 탭으로 전환 ─────────────────────────────────────────────────
     for handle in driver.window_handles:
         driver.switch_to.window(handle)
@@ -267,7 +283,7 @@ def step6_update_order_status(driver, excel_path: str):
     driver.switch_to.default_content()
     wait.until(EC.frame_to_be_available_and_switch_to_it("right"))
 
-    for order_no in order_numbers:
+    for order_no in all_order_numbers:
         try:
             # 고유번호(value)가 order_no 인 체크박스 찾기
             checkbox = driver.find_element(
